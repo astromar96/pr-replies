@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "mode": "triage",
+  "repo": {
+    "owner": "astromar96",
+    "name": "demo-repo",
+    "nameWithOwner": "astromar96/demo-repo"
+  },
+  "pr": {
+    "number": 42,
+    "title": "Add caching layer",
+    "url": "https://github.com/astromar96/demo-repo/pull/42",
+    "author": "astromar96",
+    "headRefName": "feat/cache"
+  },
+  "generatedAt": "2026-06-12T12:00:00Z",
+  "reviewThreads": [
+    {
+      "id": "PRRT_kwDOExample001",
+      "isOutdated": false,
+      "path": "src/cache.js",
+      "startLine": null,
+      "line": 120,
+      "diffHunk": "@@ -115,6 +115,9 @@ export function get(key) {\n   const entry = store.get(key);\n+  if (entry.expiresAt > Date.now()) {\n+    return entry.value;\n+  }\n   return undefined;",
+      "replyToDatabaseId": 1234567890,
+      "comments": [
+        {
+          "author": "reviewer1",
+          "createdAt": "2026-06-11T09:00:00Z",
+          "body": "Shouldn't this handle the case where `entry` is undefined? `store.get` can miss."
+        }
+      ],
+      "suggestedAction": "fix",
+      "fixPlan": "Add an early return when `store.get(key)` returns undefined, before reading `entry.expiresAt`, and cover the cache-miss path with a unit test."
+    },
+    {
+      "id": "PRRT_kwDOExample002",
+      "isOutdated": true,
+      "path": "src/index.js",
+      "startLine": null,
+      "line": null,
+      "diffHunk": "@@ -10,4 +10,8 @@\n const cache = createCache();\n+cache.warm();",
+      "replyToDatabaseId": 1234567891,
+      "comments": [
+        {
+          "author": "reviewer2",
+          "createdAt": "2026-06-11T10:00:00Z",
+          "body": "Why warm the cache eagerly at startup? This could slow down boot."
+        },
+        {
+          "author": "astromar96",
+          "createdAt": "2026-06-11T10:30:00Z",
+          "body": "It cut p99 latency in staging, but I'm open to making it lazy."
+        }
+      ],
+      "suggestedAction": "reply",
+      "fixPlan": null
+    }
+  ],
+  "issueComments": [
+    {
+      "databaseId": 333222111,
+      "author": "reviewer2",
+      "createdAt": "2026-06-11T11:00:00Z",
+      "url": "https://github.com/astromar96/demo-repo/pull/42#issuecomment-333222111",
+      "body": "Can you also update the changelog before merging?",
+      "suggestedAction": "fix",
+      "fixPlan": "Add an entry under Unreleased in CHANGELOG.md describing the new caching layer."
+    }
+  ]
+}

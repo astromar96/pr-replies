@@ -1,0 +1,16 @@
+{
+  "name": "pr-replies",
+  "metadata": {
+    "description": "Marketplace for the pr-replies Claude Code plugin"
+  },
+  "owner": {
+    "name": "astromar96"
+  },
+  "plugins": [
+    {
+      "name": "pr-replies",
+      "source": "./",
+      "description": "Triage, fix, and reply to GitHub PR review comments from a local browser UI"
+    }
+  ]
+}

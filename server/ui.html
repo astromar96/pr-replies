@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR Replies</title>
+<style>
+  :root {
+    --bg: #f6f8fa; --card: #ffffff; --fg: #1f2328; --muted: #59636e;
+    --border: #d1d9e0; --accent: #0969da; --accent-fg: #ffffff;
+    --green: #1a7f37; --green-bg: #dafbe1; --red: #d1242f; --red-bg: #ffebe9;
+    --hunk-bg: #f6f8fa; --hunk-add: #dafbe1; --hunk-del: #ffebe9; --hunk-head: #ddf4ff;
+    --badge-bg: #eaeef2; --warn-bg: #fff8c5; --warn-fg: #7d4e00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --card: #161b22; --fg: #e6edf3; --muted: #8d96a0;
+      --border: #30363d; --accent: #4493f8; --accent-fg: #ffffff;
+      --green: #3fb950; --green-bg: #122b1a; --red: #f85149; --red-bg: #3c1618;
+      --hunk-bg: #0d1117; --hunk-add: #12261e; --hunk-del: #25171c; --hunk-head: #121d2f;
+      --badge-bg: #21262d; --warn-bg: #2a2113; --warn-fg: #d4a72c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px 120px; }
+  header h1 { font-size: 20px; margin: 0 0 4px; }
+  header h1 a { color: var(--fg); text-decoration: none; }
+  header h1 a:hover { color: var(--accent); }
+  .sub { color: var(--muted); margin-bottom: 24px; }
+  .sub a { color: var(--accent); text-decoration: none; }
+  h2 { font-size: 16px; margin: 32px 0 12px; }
+  .section-note { color: var(--muted); font-size: 13px; margin: -8px 0 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 16px; overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .badge {
+    background: var(--badge-bg); border-radius: 999px; padding: 2px 10px;
+    font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-fg); font-family: inherit; }
+  .badge.fixed { background: var(--green-bg); color: var(--green); }
+  details.hunk { border-bottom: 1px solid var(--border); }
+  details.hunk summary {
+    cursor: pointer; padding: 6px 14px; color: var(--muted); font-size: 12px;
+    user-select: none;
+  }
+  .hunk pre {
+    margin: 0; padding: 8px 0; background: var(--hunk-bg); overflow-x: auto;
+    font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .hunk pre span { display: block; padding: 0 14px; white-space: pre; }
+  .hunk .add { background: var(--hunk-add); }
+  .hunk .del { background: var(--hunk-del); }
+  .hunk .hd  { background: var(--hunk-head); color: var(--muted); }
+  .comment { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .comment .meta { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .comment .meta b { color: var(--fg); }
+  .comment .body { white-space: pre-wrap; word-break: break-word; }
+  .controls { padding: 12px 14px; }
+  .fixplan {
+    border: 1px dashed var(--border); border-radius: 6px; padding: 8px 12px;
+    margin-bottom: 10px; font-size: 13px; white-space: pre-wrap;
+  }
+  .fixplan .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: block; margin-bottom: 2px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg label {
+    padding: 5px 14px; cursor: pointer; font-size: 13px; user-select: none;
+    border-right: 1px solid var(--border);
+  }
+  .seg label:last-child { border-right: none; }
+  .seg input { display: none; }
+  .seg input:checked + span { font-weight: 600; }
+  .seg label:has(input:checked) { background: var(--accent); color: var(--accent-fg); }
+  textarea {
+    width: 100%; min-height: 72px; margin-top: 10px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px; resize: vertical;
+    background: var(--bg); color: var(--fg); font: inherit;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--card); border-top: 1px solid var(--border);
+    padding: 12px 16px; display: flex; gap: 12px; justify-content: center;
+  }
+  button {
+    font: inherit; font-weight: 600; padding: 8px 20px; border-radius: 6px;
+    cursor: pointer; border: 1px solid var(--border);
+  }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .result { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
+  .result.ok { background: var(--green-bg); color: var(--green); }
+  .result.err { background: var(--red-bg); color: var(--red); white-space: pre-wrap; word-break: break-word; }
+  .result a { color: inherit; }
+  .done-banner {
+    background: var(--green-bg); color: var(--green); border: 1px solid var(--green);
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-weight: 600;
+  }
+  .empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<footer id="footer"></footer>
+<script>
+window.__PAYLOAD__ = "__PAYLOAD_JSON__";
+(function () {
+  'use strict';
+  const P = window.__PAYLOAD__;
+  const isTriage = P.mode === 'triage';
+  document.title = 'PR #' + P.pr.number + ' — ' + (isTriage ? 'Triage' : 'Replies');
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function relTime(iso) {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (!isFinite(ms) || ms < 0) return iso;
+    const m = Math.round(ms / 60000), h = Math.round(m / 60), d = Math.round(h / 24);
+    if (m < 60) return m + 'm ago';
+    if (h < 48) return h + 'h ago';
+    return d + 'd ago';
+  }
+
+  function renderHunk(hunk) {
+    if (!hunk) return '';
+    const lines = hunk.split('\n').map(function (l) {
+      const cls = l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : l.startsWith('@@') ? 'hd' : '';
+      return '<span class="' + cls + '">' + (esc(l) || '&nbsp;') + '</span>';
+    }).join('');
+    return '<details class="hunk" open><summary>diff context</summary><pre>' + lines + '</pre></details>';
+  }
+
+  function renderComments(comments) {
+    return comments.map(function (c) {
+      return '<div class="comment"><div class="meta"><b>' + esc(c.author) + '</b> · ' +
+        esc(relTime(c.createdAt)) + '</div><div class="body">' + esc(c.body) + '</div></div>';
+    }).join('');
+  }
+
+  function seg(key, action) {
+    const opts = [['fix', 'Fix'], ['reply', 'Reply only'], ['skip', 'Skip']];
+    return '<div class="seg">' + opts.map(function (o) {
+      const checked = o[0] === action ? ' checked' : '';
+      return '<label><input type="radio" name="seg-' + esc(key) + '" value="' + o[0] + '"' + checked +
+        ' data-key="' + esc(key) + '"><span>' + o[1] + '</span></label>';
+    }).join('') + '</div>';
+  }
+
+  function cardHead(badges) {
+    return '<div class="card-head">' + badges.filter(Boolean).join('') + '</div>';
+  }
+
+  function threadCard(t) {
+    const key = 'review:' + t.id;
+    const loc = t.path + (t.line != null ? ':' + (t.startLine != null && t.startLine !== t.line ? t.startLine + '-' : '') + t.line : '');
+    const badges = [
+      '<span class="badge">' + esc(loc) + '</span>',
+      t.isOutdated ? '<span class="badge warn">outdated</span>' : '',
+      (!isTriage && t.fixedIn) ? '<span class="badge fixed">fixed in ' + esc(t.fixedIn) + '</span>' : ''
+    ];
+    let controls;
+    if (isTriage) {
+      controls =
+        (t.fixPlan ? '<div class="fixplan"><span class="label">Claude’s proposed fix</span>' + esc(t.fixPlan) + '</div>' : '') +
+        seg(key, t.suggestedAction || 'reply') +
+        '<textarea data-guidance="' + esc(key) + '" placeholder="Optional guidance for Claude (how to fix, what to say…)"></textarea>';
+    } else {
+      controls = seg2(key) +
+        '<textarea data-text="' + esc(key) + '" placeholder="Reply…">' + esc(t.draft || '') + '</textarea>' +
+        '<div class="hint">Empty reply = skipped. Markdown supported by GitHub.</div>';
+    }
+    return '<div class="card" data-card="' + esc(key) + '">' + cardHead(badges) +
+      renderHunk(t.diffHunk) + renderComments(t.comments) +
+      '<div class="controls">' + controls + '</div></div>';
+  }
+
+  function issueCard(c) {
+    const key = 'issue:' + c.databaseId;
+    const badges = [
+      '<span class="badge">general comment</span>',
+      (!isTriage && c.fixedIn) ? '<span class="badge fixed">fixed in ' + esc(c.fixedIn) + '</span>' : ''
+    ];
+    let controls;
+    if (isTriage) {
+      controls =
+        (c.fixPlan ? '<div class="fixplan"><span class="label">Claude’s proposed fix</span>' + esc(c.fixPlan) + '</div>' : '') +
+        seg(key, c.suggestedAction || 'reply') +
+        '<textarea data-guidance="' + esc(key) + '" placeholder="Optional guidance for Claude…"></textarea>';
+    } else {
+      controls = seg2(key) +
+        '<textarea data-text="' + esc(key) + '" placeholder="Reply…">' + esc(c.draft || '') + '</textarea>' +
+        '<div class="hint">Posts as a new top-level comment on the PR (GitHub has no threading here).</div>';
+    }
+    return '<div class="card" data-card="' + esc(key) + '">' + cardHead(badges) +
+      renderComments([c]) + '<div class="controls">' + controls + '</div></div>';
+  }
+
+  // Reply-mode two-way toggle (Reply / Skip)
+  function seg2(key) {
+    return '<div class="seg">' +
+      '<label><input type="radio" name="seg-' + esc(key) + '" value="reply" checked data-key="' + esc(key) + '"><span>Reply</span></label>' +
+      '<label><input type="radio" name="seg-' + esc(key) + '" value="skip" data-key="' + esc(key) + '"><span>Skip</span></label>' +
+      '</div>';
+  }
+
+  // ---- render page ----
+  const app = document.getElementById('app');
+  const counts = P.reviewThreads.length + ' review thread' + (P.reviewThreads.length === 1 ? '' : 's') +
+    ' · ' + P.issueComments.length + ' general comment' + (P.issueComments.length === 1 ? '' : 's');
+  let html =
+    '<header><h1><a href="' + esc(P.pr.url) + '" target="_blank" rel="noopener">' + esc(P.pr.title) + '</a></h1>' +
+    '<div class="sub"><a href="' + esc(P.pr.url) + '" target="_blank" rel="noopener">' +
+    esc(P.repo.nameWithOwner) + '#' + P.pr.number + '</a> by ' + esc(P.pr.author) +
+    ' · ' + counts + (isTriage ? ' · <b>Step 1: choose what Claude should do</b>' : ' · <b>Step 2: review and send replies</b>') +
+    '</div></header>';
+
+  html += '<h2>Review threads</h2>';
+  html += P.reviewThreads.length
+    ? P.reviewThreads.map(threadCard).join('')
+    : '<p class="empty">No unresolved review threads.</p>';
+
+  html += '<h2>General comments</h2>';
+  if (!isTriage && P.issueComments.length) {
+    html += '<div class="section-note">Replies here post as new top-level comments on the PR.</div>';
+  }
+  html += P.issueComments.length
+    ? P.issueComments.map(issueCard).join('')
+    : '<p class="empty">No general comments.</p>';
+
+  app.innerHTML = html;
+
+  // ---- footer / state ----
+  const footer = document.getElementById('footer');
+  footer.innerHTML =
+    '<button id="cancel">Cancel — ' + (isTriage ? 'do nothing' : 'post nothing') + '</button>' +
+    '<button id="submit" class="primary"></button>';
+  const submitBtn = document.getElementById('submit');
+  const cancelBtn = document.getElementById('cancel');
+
+  function getAction(key) {
+    const checked = document.querySelector('input[name="seg-' + CSS.escape(key) + '"]:checked');
+    return checked ? checked.value : 'skip';
+  }
+  function getText(sel, key) {
+    const el = document.querySelector('textarea[data-' + sel + '="' + CSS.escape(key) + '"]');
+    return el ? el.value : '';
+  }
+
+  function allItems() {
+    const items = [];
+    P.reviewThreads.forEach(function (t) {
+      items.push({ kind: 'review', key: 'review:' + t.id, thread: t });
+    });
+    P.issueComments.forEach(function (c) {
+      items.push({ kind: 'issue', key: 'issue:' + c.databaseId, comment: c });
+    });
+    return items;
+  }
+
+  function updateFooter() {
+    if (isTriage) {
+      let fixes = 0, replies = 0;
+      allItems().forEach(function (it) {
+        const a = getAction(it.key);
+        if (a === 'fix') fixes++; else if (a === 'reply') replies++;
+      });
+      submitBtn.textContent = 'Continue (' + fixes + ' fix' + (fixes === 1 ? '' : 'es') + ', ' + replies + ' repl' + (replies === 1 ? 'y' : 'ies') + ')';
+    } else {
+      let n = 0;
+      allItems().forEach(function (it) {
+        if (getAction(it.key) === 'reply' && getText('text', it.key).trim()) n++;
+      });
+      submitBtn.textContent = 'Send ' + n + ' repl' + (n === 1 ? 'y' : 'ies');
+      submitBtn.disabled = n === 0;
+    }
+  }
+  document.body.addEventListener('change', updateFooter);
+  document.body.addEventListener('input', updateFooter);
+  updateFooter();
+
+  // ---- submit / cancel ----
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function lockUI(msg) {
+    submitBtn.disabled = true;
+    cancelBtn.disabled = true;
+    submitBtn.textContent = msg;
+    document.querySelectorAll('input, textarea').forEach(function (el) { el.disabled = true; });
+  }
+
+  function showDone(text) {
+    const banner = document.createElement('div');
+    banner.className = 'done-banner';
+    banner.textContent = text;
+    app.prepend(banner);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  cancelBtn.addEventListener('click', function () {
+    lockUI('Cancelling…');
+    post('cancel', {}).catch(function () {}).then(function () {
+      showDone('Cancelled — nothing was ' + (isTriage ? 'changed' : 'posted') + '. Return to Claude; you can close this tab.');
+    });
+  });
+
+  submitBtn.addEventListener('click', function () {
+    if (isTriage) {
+      const decisions = allItems().map(function (it) {
+        const d = { kind: it.kind, action: getAction(it.key), guidance: getText('guidance', it.key).trim() };
+        if (it.kind === 'review') d.threadId = it.thread.id; else d.databaseId = it.comment.databaseId;
+        return d;
+      });
+      lockUI('Submitting…');
+      post('submit', { decisions: decisions }).then(function () {
+        showDone('Choices sent to Claude — return to the Claude session; you can close this tab.');
+      }).catch(function (e) {
+        showDone('Failed to submit: ' + e.message + ' — is the session still running?');
+      });
+    } else {
+      const replies = [], skipped = [];
+      allItems().forEach(function (it) {
+        const body = getText('text', it.key).trim();
+        const include = getAction(it.key) === 'reply' && body;
+        if (include) {
+          const r = { kind: it.kind, key: it.key, body: body };
+          if (it.kind === 'review') {
+            r.threadId = it.thread.id;
+            r.replyToDatabaseId = it.thread.replyToDatabaseId;
+            r.path = it.thread.path;
+            r.line = it.thread.line;
+          }
+          replies.push(r);
+        } else {
+          const s = { kind: it.kind, key: it.key };
+          if (it.kind === 'review') { s.threadId = it.thread.id; s.path = it.thread.path; s.line = it.thread.line; }
+          else { s.databaseId = it.comment.databaseId; }
+          skipped.push(s);
+        }
+      });
+      lockUI('Posting ' + replies.length + ' repl' + (replies.length === 1 ? 'y' : 'ies') + '…');
+      post('submit', { replies: replies, skipped: skipped }).then(function (res) {
+        (res.posted || []).forEach(function (p) {
+          appendResult(p.key, 'ok', 'Posted' + (p.url && p.url !== '(dry-run)' ? ' — <a href="' + esc(p.url) + '" target="_blank" rel="noopener">view on GitHub</a>' : ' (dry run)'));
+        });
+        (res.errors || []).forEach(function (e) {
+          appendResult(e.key, 'err', 'Failed: ' + esc(e.error));
+        });
+        const ok = (res.posted || []).length, bad = (res.errors || []).length;
+        showDone('Done: ' + ok + ' posted' + (bad ? ', ' + bad + ' failed (see cards below — Claude can retry these)' : '') + '. Return to Claude; you can close this tab.');
+      }).catch(function (e) {
+        showDone('Failed to submit: ' + e.message + ' — is the session still running?');
+      });
+    }
+  });
+
+  function appendResult(key, cls, htmlText) {
+    const card = document.querySelector('.card[data-card="' + CSS.escape(key) + '"]');
+    if (!card) return;
+    const div = document.createElement('div');
+    div.className = 'result ' + cls;
+    div.innerHTML = htmlText;
+    card.appendChild(div);
+  }
+})();
+</script>
+</body>
+</html>

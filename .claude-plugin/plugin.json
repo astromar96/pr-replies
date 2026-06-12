@@ -1,0 +1,11 @@
+{
+  "name": "pr-replies",
+  "description": "Triage, fix, and reply to GitHub PR review comments from a local browser UI",
+  "author": {
+    "name": "astromar96"
+  },
+  "homepage": "https://github.com/astromar96/pr-replies",
+  "repository": "https://github.com/astromar96/pr-replies",
+  "license": "MIT",
+  "keywords": ["github", "pull-request", "code-review", "comments", "ui"]
+}
