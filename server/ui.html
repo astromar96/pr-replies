@@ -90,8 +90,13 @@
   footer {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--card); border-top: 1px solid var(--border);
-    padding: 12px 16px; display: flex; gap: 12px; justify-content: center;
+    padding: 12px 16px; display: flex; gap: 12px; justify-content: center; align-items: center;
   }
+  .autoclose {
+    display: flex; align-items: center; gap: 6px; color: var(--muted);
+    font-size: 13px; user-select: none; cursor: pointer; margin-right: 8px;
+  }
+  .autoclose input { accent-color: var(--accent); }
   button {
     font: inherit; font-weight: 600; padding: 8px 20px; border-radius: 6px;
     cursor: pointer; border: 1px solid var(--border);
@@ -246,6 +251,7 @@ window.__PAYLOAD__ = "__PAYLOAD_JSON__";
   // ---- footer / state ----
   const footer = document.getElementById('footer');
   footer.innerHTML =
+    '<label class="autoclose" title="Close this tab automatically once your choices are sent"><input type="checkbox" id="autoclose" checked> Auto-close tab</label>' +
     '<button id="cancel">Cancel — ' + (isTriage ? 'do nothing' : 'post nothing') + '</button>' +
     '<button id="submit" class="primary"></button>';
   const submitBtn = document.getElementById('submit');
@@ -308,21 +314,28 @@ window.__PAYLOAD__ = "__PAYLOAD_JSON__";
     submitBtn.disabled = true;
     cancelBtn.disabled = true;
     submitBtn.textContent = msg;
-    document.querySelectorAll('input, textarea').forEach(function (el) { el.disabled = true; });
+    // Keep the auto-close checkbox usable so the user can still opt out while posting.
+    document.querySelectorAll('input:not(#autoclose), textarea').forEach(function (el) { el.disabled = true; });
   }
 
-  function showDone(text) {
+  // close=true attempts window.close() when the auto-close box is ticked.
+  // Browsers only honor it for tabs they opened fresh (single history entry) —
+  // exactly how the server's `open <url>` launches this page; otherwise the
+  // banner simply stays visible.
+  function showDone(text, close) {
     const banner = document.createElement('div');
     banner.className = 'done-banner';
-    banner.textContent = text;
+    const autoClose = close && document.getElementById('autoclose').checked;
+    banner.textContent = autoClose ? text + ' Closing this tab…' : text;
     app.prepend(banner);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (autoClose) setTimeout(function () { window.close(); }, 900);
   }
 
   cancelBtn.addEventListener('click', function () {
     lockUI('Cancelling…');
     post('cancel', {}).catch(function () {}).then(function () {
-      showDone('Cancelled — nothing was ' + (isTriage ? 'changed' : 'posted') + '. Return to Claude; you can close this tab.');
+      showDone('Cancelled — nothing was ' + (isTriage ? 'changed' : 'posted') + '. Return to Claude.', true);
     });
   });
 
@@ -335,9 +348,9 @@ window.__PAYLOAD__ = "__PAYLOAD_JSON__";
       });
       lockUI('Submitting…');
       post('submit', { decisions: decisions }).then(function () {
-        showDone('Choices sent to Claude — return to the Claude session; you can close this tab.');
+        showDone('Choices sent to Claude — return to the Claude session.', true);
       }).catch(function (e) {
-        showDone('Failed to submit: ' + e.message + ' — is the session still running?');
+        showDone('Failed to submit: ' + e.message + ' — is the session still running?', false);
       });
     } else {
       const replies = [], skipped = [];
@@ -369,9 +382,10 @@ window.__PAYLOAD__ = "__PAYLOAD_JSON__";
           appendResult(e.key, 'err', 'Failed: ' + esc(e.error));
         });
         const ok = (res.posted || []).length, bad = (res.errors || []).length;
-        showDone('Done: ' + ok + ' posted' + (bad ? ', ' + bad + ' failed (see cards below — Claude can retry these)' : '') + '. Return to Claude; you can close this tab.');
+        // Never auto-close on partial failure — the per-card errors must stay visible.
+        showDone('Done: ' + ok + ' posted' + (bad ? ', ' + bad + ' failed (see cards below — Claude can retry these)' : '') + '. Return to Claude.', bad === 0);
       }).catch(function (e) {
-        showDone('Failed to submit: ' + e.message + ' — is the session still running?');
+        showDone('Failed to submit: ' + e.message + ' — is the session still running?', false);
       });
     }
   });
