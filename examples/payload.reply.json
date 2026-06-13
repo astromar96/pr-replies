@@ -1,6 +1,5 @@
 {
-  "version": 1,
-  "mode": "reply",
+  "version": 2,
   "repo": {
     "owner": "astromar96",
     "name": "demo-repo",
@@ -11,50 +10,53 @@
     "title": "Add caching layer",
     "url": "https://github.com/astromar96/demo-repo/pull/42",
     "author": "astromar96",
-    "headRefName": "feat/cache"
+    "headRefName": "feat/cache",
+    "reviewers": [
+      { "login": "reviewer1", "state": "CHANGES_REQUESTED" },
+      { "login": "reviewer2", "state": "APPROVED" }
+    ]
   },
   "generatedAt": "2026-06-12T12:30:00Z",
   "reviewThreads": [
     {
       "id": "PRRT_kwDOExample001",
       "isOutdated": false,
+      "viewerCanResolve": true,
       "path": "src/cache.js",
       "startLine": null,
       "line": 120,
-      "diffHunk": "@@ -115,6 +115,9 @@ export function get(key) {\n   const entry = store.get(key);\n+  if (entry.expiresAt > Date.now()) {\n+    return entry.value;\n+  }\n   return undefined;",
+      "diffHunk": "@@ -115,6 +115,9 @@ function get(key) {\n   const entry = store.get(key);\n+  if (entry.expiresAt > Date.now()) {\n+    return entry.value;\n+  }\n   return undefined;",
       "replyToDatabaseId": 1234567890,
       "comments": [
         {
           "author": "reviewer1",
           "createdAt": "2026-06-11T09:00:00Z",
-          "body": "Shouldn't this handle the case where `entry` is undefined? `store.get` can miss."
+          "body": "Shouldn't this handle the case where `entry` is undefined? A cache miss would throw here."
         }
       ],
       "fixedIn": "abc1234",
-      "draft": "Good catch — fixed in `abc1234`. `get()` now returns early on a cache miss before touching `entry.expiresAt`, and there's a new unit test covering the miss path."
+      "resolveDefault": true,
+      "draft": "Good catch — fixed in `abc1234`. `get()` now returns early on a cache miss instead of dereferencing `entry`."
     },
     {
       "id": "PRRT_kwDOExample002",
       "isOutdated": true,
+      "viewerCanResolve": false,
       "path": "src/index.js",
-      "startLine": null,
-      "line": null,
-      "diffHunk": "@@ -10,4 +10,8 @@\n const cache = createCache();\n+cache.warm();",
+      "startLine": 10,
+      "line": 14,
+      "diffHunk": "@@ -8,7 +8,11 @@\n const config = loadConfig();\n+const cache = createCache(config.cache);\n",
       "replyToDatabaseId": 1234567891,
       "comments": [
         {
-          "author": "reviewer2",
-          "createdAt": "2026-06-11T10:00:00Z",
-          "body": "Why warm the cache eagerly at startup? This could slow down boot."
-        },
-        {
-          "author": "astromar96",
-          "createdAt": "2026-06-11T10:30:00Z",
-          "body": "It cut p99 latency in staging, but I'm open to making it lazy."
+          "author": "reviewer1",
+          "createdAt": "2026-06-11T09:30:00Z",
+          "body": "Is the cache size configurable? I don't see it documented."
         }
       ],
       "fixedIn": null,
-      "draft": "Warming is async and doesn't block the listen call — boot time is unaffected (measured ~3ms overhead). Happy to gate it behind a config flag if you'd prefer it opt-in."
+      "resolveDefault": false,
+      "draft": "Yes — `cache.maxEntries` in the config (defaults to 1000, see `src/config.js:22`). I'll add it to the README in a follow-up if you'd like."
     }
   ],
   "issueComments": [
@@ -65,7 +67,7 @@
       "url": "https://github.com/astromar96/demo-repo/pull/42#issuecomment-333222111",
       "body": "Can you also update the changelog before merging?",
       "fixedIn": "def5678",
-      "draft": "> Can you also update the changelog before merging?\n\n@reviewer2 Done in `def5678` — added under Unreleased."
+      "draft": "> Can you also update the changelog before merging?\n\n@reviewer2 done in `def5678` — added the caching layer under Unreleased."
     }
   ]
 }
