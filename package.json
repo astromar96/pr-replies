@@ -1,0 +1,10 @@
+{
+  "name": "pr-replies",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Triage, fix, and reply to GitHub PR comments in a live browser session (Claude Code plugin)",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
