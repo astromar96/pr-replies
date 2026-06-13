@@ -5,6 +5,11 @@
   "description": "Triage, fix, and reply to GitHub PR comments in a live browser session (Claude Code plugin)",
   "license": "MIT",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "ui:preview": "node scripts/ui-preview.js",
+    "ui:preview:headed": "node scripts/ui-preview.js --headed"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
   }
 }
