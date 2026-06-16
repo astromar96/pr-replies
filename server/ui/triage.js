@@ -23,6 +23,11 @@
     return '<span class="badge conf conf-' + item.confidence + '">' + item.confidence + ' confidence</span>';
   }
 
+  function assigneeRow(key) {
+    return '<div class="assignee"><label>Assign</label>' +
+      '<input list="prr-assignees" data-assignee="' + PRR.esc(key) + '" placeholder="teammate (optional)"></div>';
+  }
+
   function searchText(item) {
     const comments = item.comments || [{ author: item.author, body: item.body }];
     return [item.path || 'general']
@@ -40,6 +45,7 @@
         : '') +
       seg(key, defaultAction(item, snapshot)) +
       '<textarea data-guidance="' + PRR.esc(key) + '" placeholder="Optional guidance for Claude (how to fix, what to say…)"></textarea>' +
+      assigneeRow(key) +
       '</div>';
   }
 
@@ -86,14 +92,19 @@
       return el ? el.value : '';
     },
 
-    render: function (snapshot) {
+    getAssignee: function (key) {
+      const el = document.querySelector('input[data-assignee="' + CSS.escape(key) + '"]');
+      return el ? el.value.trim() : '';
+    },
+
+    render: function (snapshot, opts) {
       const self = this;
       const P = snapshot.triage.payload;
       const app = document.getElementById('app');
 
-      const byFile = {};
-      P.reviewThreads.forEach(function (t) { (byFile[t.path] = byFile[t.path] || []).push(t); });
-      const files = Object.keys(byFile).sort();
+      const mode = PRR.groupBy();
+      const groups = PRR.groupThreads(P.reviewThreads, mode);
+      const assignees = (P.pr && P.pr.assignableUsers) || [];
 
       let html =
         '<div class="view"><header><h1><a href="' + PRR.esc(P.pr.url) + '" target="_blank" rel="noopener">' + PRR.esc(P.pr.title) + '</a></h1>' +
@@ -116,14 +127,18 @@
         '<button class="small" data-batch="fix">Fix</button>' +
         '<button class="small" data-batch="reply">Reply</button>' +
         '<button class="small" data-batch="skip">Skip</button>' +
+        '<span class="spacer"></span>' + PRR.groupSeg(mode) +
         '</div></div>';
 
-      html += files.map(function (f) {
-        return '<div class="file-group" data-file="' + PRR.esc(f) + '">' +
-          '<div class="file-head">' + PRR.esc(f) + ' <span class="n">· ' + PRR.plural(byFile[f].length, 'thread') + '</span></div>' +
-          byFile[f].map(function (t) { return threadCard(snapshot, t); }).join('') + '</div>';
+      html += '<datalist id="prr-assignees">' +
+        assignees.map(function (a) { return '<option value="' + PRR.esc(a) + '"></option>'; }).join('') + '</datalist>';
+
+      html += groups.map(function (g) {
+        return '<div class="file-group" data-file="' + PRR.esc(g.key) + '">' +
+          PRR.groupHeader(g, mode, snapshot) +
+          g.threads.map(function (t) { return threadCard(snapshot, t); }).join('') + '</div>';
       }).join('');
-      if (!files.length) html += '<h2>Review threads</h2><p class="empty">No unresolved review threads.</p>';
+      if (!groups.length) html += '<h2>Review threads</h2><p class="empty">No unresolved review threads.</p>';
 
       html += '<h2>General comments</h2>';
       html += P.issueComments.length
@@ -140,7 +155,7 @@
 
       this.renderFooter(snapshot);
       this.wire(snapshot);
-      this.restoreDrafts(snapshot);
+      this.restoreDrafts(snapshot, { silent: !!(opts && opts.silentRestore) });
       this.updateFooter(snapshot);
     },
 
@@ -156,6 +171,7 @@
     wire: function (snapshot) {
       const self = this;
       const app = document.getElementById('app');
+      self._snap = snapshot;
       this.ring = PRR.focusRing();
 
       // filtering
@@ -189,6 +205,15 @@
         });
       });
 
+      // group-by: persist current edits, switch grouping, re-apply silently
+      document.querySelectorAll('input[name="groupby"]').forEach(function (el) {
+        el.addEventListener('change', function () {
+          self.persist(snapshot);
+          PRR.store.pref('groupby', el.value);
+          self.render(snapshot, { silentRestore: true });
+        });
+      });
+
       // batch actions
       document.getElementById('batch-suggest').addEventListener('click', function () {
         self.allItems(snapshot).forEach(function (it) {
@@ -211,10 +236,14 @@
         });
       });
 
-      // live updates + persistence
-      const persist = PRR.debounce(function () { self.persist(snapshot); }, 300);
-      app.addEventListener('change', function () { self.updateFooter(snapshot); persist(); });
-      app.addEventListener('input', function () { self.updateFooter(snapshot); persist(); });
+      // live updates + persistence — delegated on #app, attached once (group-by
+      // re-renders reuse the same #app element). Read the latest snapshot.
+      if (!this._wired) {
+        this._wired = true;
+        const persist = PRR.debounce(function () { self.persist(self._snap); }, 300);
+        app.addEventListener('change', function () { self.updateFooter(self._snap); persist(); });
+        app.addEventListener('input', function () { self.updateFooter(self._snap); persist(); });
+      }
 
       // submit / cancel
       document.getElementById('submit').addEventListener('click', function () { self.submit(snapshot); });
@@ -241,6 +270,14 @@
           const card = self.ring.current();
           const d = card && card.querySelector('details');
           if (d) d.open = !d.open;
+        },
+        't': function () {
+          const card = self.ring.current();
+          if (!card) return;
+          const ta = card.querySelector('textarea[data-guidance]');
+          if (!ta) return;
+          const it = self.allItems(snapshot).find(function (x) { return x.key === card.dataset.card; });
+          PRR.templates.openPicker(ta, 'guidance', it ? PRR.templateCtx(it.item, snapshot) : {});
         },
         '/': function () { filterInput.focus(); },
         '?': function () { PRR.app.toggleHelp('triage'); },
@@ -283,32 +320,42 @@
       const self = this;
       const triage = {};
       this.allItems(snapshot).forEach(function (it) {
-        triage[it.key] = { action: self.getAction(it.key), guidance: self.getGuidance(it.key) };
+        triage[it.key] = { action: self.getAction(it.key), guidance: self.getGuidance(it.key), assignee: self.getAssignee(it.key) };
       });
       PRR.store.save({ triage: triage });
+      // best-effort server-side mirror; localStorage is the source of truth
+      PRR.api.post('data/decisions', { triage: triage }).catch(function () {});
     },
 
-    restoreDrafts: function (snapshot) {
+    applySaved: function (snapshot, saved) {
+      const self = this;
+      this.allItems(snapshot).forEach(function (it) {
+        const s = saved[it.key];
+        if (!s) return;
+        if (s.action) self.setAction(it.key, s.action);
+        const ta = document.querySelector('textarea[data-guidance="' + CSS.escape(it.key) + '"]');
+        if (ta && s.guidance) ta.value = s.guidance;
+        const ai = document.querySelector('input[data-assignee="' + CSS.escape(it.key) + '"]');
+        if (ai && s.assignee) ai.value = s.assignee;
+      });
+      this.updateFooter(snapshot);
+    },
+
+    restoreDrafts: function (snapshot, opts) {
       const self = this;
       const saved = PRR.store.load().triage;
       if (!saved) return;
+      if (opts && opts.silent) { this.applySaved(snapshot, saved); return; }
       const dirty = this.allItems(snapshot).some(function (it) {
         const s = saved[it.key];
-        return s && (s.guidance || s.action !== defaultAction(it.item, snapshot));
+        return s && (s.guidance || s.assignee || s.action !== defaultAction(it.item, snapshot));
       });
       if (!dirty) return;
       const banner = PRR.banner('warn',
         'Found triage edits from ' + PRR.relTime(PRR.store.load().savedAt) + '.',
         '<button class="small" id="restore-yes">Restore</button><button class="small" id="restore-no">Dismiss</button>');
       banner.querySelector('#restore-yes').addEventListener('click', function () {
-        self.allItems(snapshot).forEach(function (it) {
-          const s = saved[it.key];
-          if (!s) return;
-          self.setAction(it.key, s.action);
-          const ta = document.querySelector('textarea[data-guidance="' + CSS.escape(it.key) + '"]');
-          if (ta && s.guidance) ta.value = s.guidance;
-        });
-        self.updateFooter(snapshot);
+        self.applySaved(snapshot, saved);
         banner.remove();
       });
       banner.querySelector('#restore-no').addEventListener('click', function () { banner.remove(); });
@@ -326,6 +373,8 @@
       if (document.getElementById('submit').disabled) return;
       const decisions = this.allItems(snapshot).map(function (it) {
         const d = { kind: it.kind, action: self.getAction(it.key), guidance: self.getGuidance(it.key).trim() };
+        const assignee = self.getAssignee(it.key);
+        if (assignee) d.assignee = assignee;
         if (it.kind === 'review') d.threadId = it.item.id;
         else d.databaseId = it.item.databaseId;
         return d;
@@ -347,6 +396,7 @@
       ['j / k', 'next / previous comment'],
       ['1 / 2 / 3', 'set Fix / Reply / Skip'],
       ['e', 'edit guidance'],
+      ['t', 'insert a template'],
       ['o', 'toggle diff'],
       ['/', 'filter'],
       ['⌘↩', 'continue'],

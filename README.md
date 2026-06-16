@@ -25,6 +25,13 @@ network calls are `gh` talking to GitHub with your existing auth. Your edits
 survive refreshes, timeouts, and even a server restart (localStorage keyed by
 repo + PR, and a resumable on-disk session).
 
+The whole session lives inside an **app shell** with a persistent nav
+(**Dashboard · Active PR · History · Templates**), a **light / dark / system**
+theme toggle, and keyboard-first navigation throughout (`g d` / `g h` / `g t` /
+`g p` jump between routes). Triage and reply can be **grouped by file or by
+reviewer**, and each comment can be tagged with a teammate to handle — see
+[The hub](#the-hub--dashboard-history--templates) below.
+
 ## Requirements
 
 - [GitHub CLI](https://cli.github.com) (`gh`) installed and authenticated (`gh auth login`)
@@ -54,6 +61,40 @@ In any repo with an open PR:
 Only **unresolved** review threads are shown. Comments you authored and bot
 comments are filtered out of the general-comments list.
 
+## The hub — dashboard, history & templates
+
+These features make pr-replies feel like a team tool while staying **local —
+each developer runs it on their own machine with their own `gh` auth**. There is
+no hosted server and no accounts.
+
+Launch the hub (no PR needed) to browse across sessions:
+
+```
+node server/server.js serve --home      # or: npm run home
+```
+
+- **Dashboard** — live sessions running on this machine (deep-links to each), a
+  history of finished sessions, and — on demand — a list of open PRs from
+  `gh pr list`. It does **not** start a flow: the browser can't invoke Claude, so
+  it shows a copyable `/pr-replies <n>` hint. Run that in Claude Code to begin.
+- **History** — an audit log of every finished session (what was posted,
+  resolved, and fixed, with commit SHAs and timestamps). Written automatically at
+  the end of each session; nothing to enable.
+- **Templates** — reusable reply snippets. Press `t` while drafting a reply (or
+  triage guidance) to insert one, with `{{author}}`, `{{sha}}`, `{{path}}`,
+  `{{pr}}`, `{{repo}}`, and `{{line}}` filled in. Your templates live in
+  `~/.config/pr-replies/templates.json`; a repo can also ship read-only shared
+  templates in `.pr-replies/templates.json` (merged in, user wins on conflicts).
+- **Reviewer routing** — group triage/reply by reviewer (with their review
+  state), assign a comment to a teammate, and optionally @-mention them in the
+  posted reply. Assignment is an advisory label + opt-in mention, not a GitHub
+  assignment API call.
+
+Local files the hub reads and writes (all under `~/.config/pr-replies/`):
+`templates.json`, `history/<session>.json`, and `home.json` (the running hub's
+address). Set `PR_REPLIES_CONFIG_DIR` to point all of these elsewhere — the test
+suite and UI preview use it so they never touch your real files.
+
 ## Configuration (optional)
 
 `~/.config/pr-replies/config.json`:
@@ -64,7 +105,10 @@ comments are filtered out of the general-comments list.
   "defaultTriageAction": null,
   "autoResolveFixedThreads": true,
   "sessionTimeoutMins": 120,
-  "waitTimeoutSecs": 540
+  "waitTimeoutSecs": 540,
+  "historyMax": 200,
+  "theme": "system",
+  "dashboardListPrs": false
 }
 ```
 
@@ -73,6 +117,9 @@ comments are filtered out of the general-comments list.
 - `autoResolveFixedThreads` — pre-tick "Resolve thread" on fixed threads you can resolve.
 - `sessionTimeoutMins` — how long the background session server lives without finishing.
 - `waitTimeoutSecs` — default window for each blocking `wait` call.
+- `historyMax` — how many session records to keep in `history/` (oldest pruned; cap 2000).
+- `theme` — `"light"`, `"dark"`, or `"system"`. The in-browser toggle overrides this per browser.
+- `dashboardListPrs` — auto-load the open-PR list on the dashboard (otherwise it loads on demand).
 
 ## How it works
 
@@ -95,9 +142,15 @@ stop --session DIR
   everything in a session dir under `/tmp/pr-replies/`; all JSON is written
   atomically and `events.jsonl` doubles as the SSE replay log, so a refresh or
   reconnect never loses state.
+- `serve --home` is the same server with no session: it skips the state machine
+  and exposes only a read-only data plane (`GET /{token}/data/*`) backed by
+  `server/lib/{dataPlane,store,history}.js` — the dashboard, history, and
+  templates, all read from local JSON. Phase routes 404 in this mode.
 - `server/ui/` is a vanilla-JS single page (concatenated at serve time — no
   build step) that boots from `GET /state` and listens on `GET /events` (SSE).
-  No payload is ever injected into the HTML.
+  A thin hash router (`server/ui/router.js`) layers the Dashboard / History /
+  Templates routes over the per-PR phase views, which it never repaints. No
+  payload is ever injected into the HTML.
 - Inline replies land **inside the review thread** (GraphQL
   `addPullRequestReviewThreadReply`, REST fallback); general comments post as
   new top-level PR comments; ticked threads are resolved with
@@ -131,7 +184,14 @@ Drive the full session UI without GitHub or Claude:
 ```
 scripts/demo.sh              # triage → scripted fix progress → dry-run replies
 scripts/demo.sh reply-only   # the --no-fix fast path
+scripts/demo.sh home         # the dashboard / history / templates hub
 ```
+
+`npm run ui:preview` boots the real server (session **and** hub) and drives the
+whole UI with Playwright, screenshotting every route into `test/ui/screenshots/`.
+Because the entire vanilla-JS bundle is concatenated and served, it doubles as an
+integration test: any load-order or `ReferenceError` regression makes a route
+throw and fails the run.
 
 To exercise crash recovery: kill the `serve` pid mid-triage, then
 `node server/server.js serve --session <dir> --resume`.

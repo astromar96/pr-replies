@@ -7,6 +7,9 @@
 
 const ACTIONS = ['fix', 'reply'];
 const CONFIDENCES = ['high', 'medium', 'low'];
+const TEMPLATE_SCOPES = ['reply', 'guidance', 'both'];
+const MAX_TEMPLATES = 200;
+const MAX_TEMPLATE_BODY = 8000;
 
 function err(errors, where, msg) {
   errors.push(`${where}: ${msg}`);
@@ -19,6 +22,8 @@ function checkString(errors, where, val, { optional = false } = {}) {
   }
   if (typeof val !== 'string') err(errors, where, `expected string, got ${typeof val}`);
 }
+
+function isStringArray(v) { return Array.isArray(v) && v.every((x) => typeof x === 'string'); }
 
 function checkEnum(errors, where, val, allowed, { optional = false } = {}) {
   if (val == null) {
@@ -62,6 +67,7 @@ function checkThreadCore(errors, where, t) {
   if (t.replyToDatabaseId == null) err(errors, `${where}.replyToDatabaseId`, 'missing');
   if (typeof t.isOutdated !== 'boolean') err(errors, `${where}.isOutdated`, 'missing boolean');
   if (typeof t.viewerCanResolve !== 'boolean') err(errors, `${where}.viewerCanResolve`, 'missing boolean');
+  checkString(errors, `${where}.assignee`, t.assignee, { optional: true });
   checkComments(errors, where, t.comments);
 }
 
@@ -70,6 +76,9 @@ function validateTriagePayload(payload) {
   if (!checkCommon(errors, payload)) return errors;
   if (payload.pr.reviewers != null && !Array.isArray(payload.pr.reviewers)) {
     err(errors, 'pr.reviewers', 'expected array');
+  }
+  if (payload.pr.assignableUsers != null && !isStringArray(payload.pr.assignableUsers)) {
+    err(errors, 'pr.assignableUsers', 'expected array of strings');
   }
   payload.reviewThreads.forEach((t, i) => {
     const where = `reviewThreads[${i}]`;
@@ -88,6 +97,7 @@ function validateTriagePayload(payload) {
     checkEnum(errors, `${where}.confidence`, c.confidence, CONFIDENCES, { optional: true });
     checkString(errors, `${where}.fixPlan`, c.fixPlan, { optional: true });
     checkString(errors, `${where}.proposedDiff`, c.proposedDiff, { optional: true });
+    checkString(errors, `${where}.assignee`, c.assignee, { optional: true });
   });
   return errors;
 }
@@ -95,6 +105,9 @@ function validateTriagePayload(payload) {
 function validateReplyPayload(payload) {
   const errors = [];
   if (!checkCommon(errors, payload)) return errors;
+  if (payload.pr.assignableUsers != null && !isStringArray(payload.pr.assignableUsers)) {
+    err(errors, 'pr.assignableUsers', 'expected array of strings');
+  }
   payload.reviewThreads.forEach((t, i) => {
     const where = `reviewThreads[${i}]`;
     checkThreadCore(errors, where, t);
@@ -111,8 +124,39 @@ function validateReplyPayload(payload) {
     checkString(errors, `${where}.body`, c.body);
     checkString(errors, `${where}.draft`, c.draft, { optional: true });
     checkString(errors, `${where}.fixedIn`, c.fixedIn, { optional: true });
+    checkString(errors, `${where}.assignee`, c.assignee, { optional: true });
   });
   return errors;
 }
 
-module.exports = { validateTriagePayload, validateReplyPayload };
+function validateTemplates(payload) {
+  const errors = [];
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    err(errors, 'payload', 'not an object');
+    return errors;
+  }
+  if (!Array.isArray(payload.templates)) {
+    err(errors, 'templates', 'missing array');
+    return errors;
+  }
+  if (payload.templates.length > MAX_TEMPLATES) err(errors, 'templates', `too many (max ${MAX_TEMPLATES})`);
+  const ids = new Set();
+  payload.templates.forEach((t, i) => {
+    const where = `templates[${i}]`;
+    checkString(errors, `${where}.id`, t && t.id);
+    checkString(errors, `${where}.name`, t && t.name);
+    checkString(errors, `${where}.body`, t && t.body);
+    if (t && typeof t.id === 'string') {
+      if (ids.has(t.id)) err(errors, `${where}.id`, `duplicate id "${t.id}"`);
+      ids.add(t.id);
+    }
+    if (t && typeof t.body === 'string' && t.body.length > MAX_TEMPLATE_BODY) {
+      err(errors, `${where}.body`, `exceeds ${MAX_TEMPLATE_BODY} characters`);
+    }
+    checkEnum(errors, `${where}.scope`, t && t.scope, TEMPLATE_SCOPES, { optional: true });
+    if (t && t.tags != null && !Array.isArray(t.tags)) err(errors, `${where}.tags`, 'expected array');
+  });
+  return errors;
+}
+
+module.exports = { validateTriagePayload, validateReplyPayload, validateTemplates };

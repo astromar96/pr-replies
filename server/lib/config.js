@@ -18,13 +18,18 @@ const DEFAULTS = {
   autoResolveFixedThreads: true,
   sessionTimeoutMins: 120,
   waitTimeoutSecs: 540,
+  historyMax: 200,
+  theme: 'system',
+  dashboardListPrs: false,
 };
 
 const TRIAGE_ACTIONS = [null, 'fix', 'reply', 'skip'];
+const THEMES = ['light', 'dark', 'system'];
 const MAX_SIGNATURE_CHARS = 500;
 const MAX_SESSION_TIMEOUT_MINS = 1440;
 // 3540s = 59 min: stays under typical 1h tool-call ceilings.
 const MAX_WAIT_TIMEOUT_SECS = 3540;
+const MAX_HISTORY = 2000;
 
 function timeoutValue(key, value, max, warnings) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -96,6 +101,23 @@ function loadConfig({ configPath = CONFIG_PATH } = {}) {
         break;
       case 'waitTimeoutSecs':
         config.waitTimeoutSecs = timeoutValue(key, value, MAX_WAIT_TIMEOUT_SECS, warnings);
+        break;
+      case 'historyMax':
+        config.historyMax = timeoutValue(key, value, MAX_HISTORY, warnings);
+        break;
+      case 'theme':
+        if (!THEMES.includes(value)) {
+          warnings.push('config: theme must be "light", "dark", or "system"; using default');
+        } else {
+          config.theme = value;
+        }
+        break;
+      case 'dashboardListPrs':
+        if (typeof value !== 'boolean') {
+          warnings.push('config: dashboardListPrs must be a boolean; using default');
+        } else {
+          config.dashboardListPrs = value;
+        }
         break;
     }
   }

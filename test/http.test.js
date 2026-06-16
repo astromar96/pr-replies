@@ -237,3 +237,94 @@ test('control/shutdown calls the onShutdown hook', async () => {
     assert.equal(s.shutdownSpy.called, 1);
   } finally { s.server.close(); }
 });
+
+// ---------- data plane ----------
+function fakeData() {
+  let saved = [{ id: 'a', name: 'A', scope: 'reply', body: 'x', source: 'user', readonly: false }];
+  return {
+    sessions() { return [{ repo: 'o/r', pr: 1, phase: 'reply', url: 'http://127.0.0.1:1/t/', pid: 1, alive: true, startedAt: '', updatedAt: '' }]; },
+    async prs() { return { available: false, reason: 'disabled' }; },
+    history() { return [{ id: 'h1', repo: 'o/r', pr: 1, status: 'submitted', endedAt: '', counts: {} }]; },
+    historyDetail(id) { return id === 'h1' ? { id: 'h1', repo: 'o/r', pr: 1, posted: [] } : null; },
+    templates() { return saved; },
+    saveTemplates(list) { saved = list.map((t) => Object.assign({ source: 'user', readonly: false }, t)); return saved; },
+    async dashboard() { return { mode: 'session', sessions: this.sessions(), history: this.history() }; },
+  };
+}
+
+// Boot a session-mode app that also exposes the data plane.
+function bootData() {
+  const dir = tmpDir();
+  writeAtomic(sessionPaths(dir).triagePayload, triagePayload());
+  const state = createState({ sessionDir: dir, flags: {}, config: {}, github: fakeGithub(), git: { getFixCommit: async () => null }, log() {} });
+  return state.init({ startPhase: 'triage' }).then(() => {
+    const app = createApp({ state, data: fakeData(), token: 'tok', html: () => '<html>ok</html>', log() {} });
+    return new Promise((resolve) => app.server.listen(0, '127.0.0.1', () => resolve({ dir, server: app.server, port: app.server.address().port })));
+  });
+}
+
+// Boot a home-mode app: no state, only GET / + the data plane.
+function bootHome() {
+  const app = createApp({
+    state: null, data: fakeData(),
+    snapshot: () => ({ mode: 'home', config: { theme: 'system' } }),
+    token: 'tok', html: () => '<html>hub</html>', log() {},
+  });
+  return new Promise((resolve) => app.server.listen(0, '127.0.0.1', () => resolve({ server: app.server, port: app.server.address().port })));
+}
+
+test('data plane: GET dashboard/sessions/history/templates return shapes', async () => {
+  const s = await bootData();
+  try {
+    const dash = await req(s.port, 'GET', '/tok/data/dashboard');
+    assert.equal(dash.status, 200);
+    assert.equal(dash.body.sessions.length, 1);
+    assert.equal((await req(s.port, 'GET', '/tok/data/sessions')).body.sessions.length, 1);
+    assert.equal((await req(s.port, 'GET', '/tok/data/history')).body.history.length, 1);
+    assert.equal((await req(s.port, 'GET', '/tok/data/templates')).body.templates[0].id, 'a');
+    const detail = await req(s.port, 'GET', '/tok/data/history/h1');
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.pr, 1);
+    const missing = await req(s.port, 'GET', '/tok/data/history/nope');
+    assert.equal(missing.status, 404);
+    // wrong token / bad host still guarded on data routes
+    assert.equal((await req(s.port, 'GET', '/bad/data/templates')).status, 404);
+    assert.equal((await req(s.port, 'GET', '/tok/data/templates', null, { Host: 'evil.com' })).status, 400);
+  } finally { s.server.close(); }
+});
+
+test('data plane: POST templates validates then round-trips', async () => {
+  const s = await bootData();
+  try {
+    const bad = await req(s.port, 'POST', '/tok/data/templates', { templates: [{ id: 'x' }] });
+    assert.equal(bad.status, 400);
+    assert.ok(Array.isArray(bad.body.errors) && bad.body.errors.length > 0);
+    const ok = await req(s.port, 'POST', '/tok/data/templates', { templates: [{ id: 'y', name: 'Y', scope: 'reply', body: 'hi' }] });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.templates[0].id, 'y');
+    assert.equal((await req(s.port, 'GET', '/tok/data/templates')).body.templates[0].id, 'y');
+  } finally { s.server.close(); }
+});
+
+test('data plane: POST decisions writes the session sidecar', async () => {
+  const s = await bootData();
+  try {
+    const res = await req(s.port, 'POST', '/tok/data/decisions', { triage: { 'review:PRRT_1': { action: 'fix', assignee: 'alice' } } });
+    assert.equal(res.status, 200);
+    const sidecar = JSON.parse(fs.readFileSync(sessionPaths(s.dir).decisionsDraft, 'utf8'));
+    assert.equal(sidecar.triage['review:PRRT_1'].assignee, 'alice');
+    assert.equal(sidecar.version, 1);
+  } finally { s.server.close(); }
+});
+
+test('home mode: serves html + data plane; phase routes and SSE 404', async () => {
+  const s = await bootHome();
+  try {
+    assert.match((await req(s.port, 'GET', '/tok/')).raw, /hub/);
+    assert.equal((await req(s.port, 'GET', '/tok/state')).body.mode, 'home');
+    assert.equal((await req(s.port, 'GET', '/tok/data/templates')).status, 200);
+    assert.equal((await req(s.port, 'GET', '/tok/events')).status, 404);
+    assert.equal((await req(s.port, 'POST', '/tok/triage/submit', { decisions: [] })).status, 404);
+    assert.equal((await req(s.port, 'POST', '/tok/control/advance', { phase: 'reply' })).status, 404);
+  } finally { s.server.close(); }
+});

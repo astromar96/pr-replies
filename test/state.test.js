@@ -65,15 +65,21 @@ function makeGithub({ review, issue, resolve } = {}) {
   };
 }
 
-function makeState(dir, { github = makeGithub(), config = {} } = {}) {
+function makeState(dir, { github = makeGithub(), config = {}, history = null } = {}) {
   return createState({
     sessionDir: dir,
     flags: { noPost: true, repoDir: null },
     config,
     github,
     git: { getFixCommit: async () => null },
+    history,
     log() {},
   });
+}
+
+function spyHistory() {
+  const records = [];
+  return { records, record(r) { records.push(r); return r; } };
 }
 
 const REVIEW_REPLY = {
@@ -471,6 +477,63 @@ test('resume: a post interrupted mid-flight is locked and never auto-reposted', 
   assert.equal(ghB.calls.review.length, 0, 'interrupted key was re-posted');
   assert.equal(ghB.calls.issue.length, 1);
   assert.equal(b.phase, 'done');
+});
+
+// ---------- history recorder ----------
+test('history: finalizeReply records the session once as submitted', async () => {
+  const dir = tmpDir();
+  writeReply(dir);
+  const history = spyHistory();
+  const state = makeState(dir, { history });
+  await state.init({ startPhase: 'reply' });
+  await state.submitReplies({ replies: [REVIEW_REPLY, ISSUE_REPLY] });
+  assert.equal(history.records.length, 1);
+  assert.equal(history.records[0].status, 'submitted');
+  assert.equal(history.records[0].repo, 'o/r');
+  assert.equal(history.records[0].pr, 42);
+  assert.equal(history.records[0].posted.length, 2);
+  assert.equal(history.records[0].resolved.length, 1);
+});
+
+test('history: stop(timeout) records once as timeout', async () => {
+  const dir = tmpDir();
+  writeTriage(dir);
+  const history = spyHistory();
+  const state = makeState(dir, { history });
+  await state.init({ startPhase: 'triage' });
+  state.submitTriage([]);
+  state.stop('timeout');
+  assert.equal(history.records.length, 1);
+  assert.equal(history.records[0].status, 'timeout');
+});
+
+test('history: cancel records once as cancelled', async () => {
+  const dir = tmpDir();
+  writeTriage(dir);
+  const history = spyHistory();
+  const state = makeState(dir, { history });
+  await state.init({ startPhase: 'triage' });
+  state.cancel('triage');
+  assert.equal(history.records.length, 1);
+  assert.equal(history.records[0].status, 'cancelled');
+});
+
+test('history: omitting the recorder is a no-op; a throwing recorder never breaks the terminal transition', async () => {
+  const dir = tmpDir();
+  writeReply(dir);
+  const state = makeState(dir); // no history injected
+  await state.init({ startPhase: 'reply' });
+  await state.submitReplies({ replies: [REVIEW_REPLY, ISSUE_REPLY] });
+  assert.equal(state.phase, 'done');
+
+  const dir2 = tmpDir();
+  writeReply(dir2);
+  const boom = { record() { throw new Error('disk full'); } };
+  const state2 = makeState(dir2, { history: boom });
+  await state2.init({ startPhase: 'reply' });
+  await state2.submitReplies({ replies: [REVIEW_REPLY, ISSUE_REPLY] });
+  assert.equal(state2.phase, 'done'); // transition completed despite the throw
+  assert.equal(readJson(sessionPaths(dir2).replyResult).status, 'submitted');
 });
 
 test('submitReplies: resolve is skipped server-side when viewerCanResolve is false', async () => {

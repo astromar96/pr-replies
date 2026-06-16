@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Visual UI preview harness.
+ * Visual UI preview + integration gate.
  *
  * Boots the real session server with the bundled example payloads (no GitHub,
  * no Claude, no real PR — same dry-run path as scripts/demo.sh) and drives the
- * UI through every phase with Playwright, screenshotting each one. Use --headed
- * to watch the whole walkthrough live instead.
+ * UI through every phase with Playwright, screenshotting each one. Then boots
+ * the hub (`serve --home`) against a seeded config dir and screenshots the
+ * Dashboard / History / Templates routes. Use --headed to watch it live.
  *
  *   node scripts/ui-preview.js            # headless, writes screenshots
  *   node scripts/ui-preview.js --headed   # visible browser, auto-driven
@@ -14,9 +15,10 @@
  *   node scripts/ui-preview.js --out DIR   # screenshot output dir
  *   node scripts/ui-preview.js --headed --dwell 6  # pause 6s on each phase
  *
- * Phase transitions are driven exactly as the skill drives them: the browser
- * click POSTs triage/reply, and the `emit`/`advance` server CLI stands in for
- * Claude's side (mirroring scripts/demo.sh).
+ * Because the whole vanilla-JS bundle is concatenated and served, any
+ * ReferenceError / load-order regression in a ui/*.js module makes a route
+ * throw — which fails this harness. It is the integration test a node --test
+ * unit cannot be.
  */
 const fs = require('node:fs');
 const os = require('node:os');
@@ -50,11 +52,10 @@ function parseArgs(argv) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Run a server.js subcommand (emit / advance / stop). stderr is inherited so
-// the server's own log lines surface; stdout (JSON acks) is swallowed.
 function runCli(args, opts = {}) {
   const r = spawnSync('node', [SRV, ...args], {
     stdio: ['ignore', 'ignore', opts.quiet ? 'ignore' : 'inherit'],
+    env: opts.env || process.env,
   });
   if (r.status !== 0 && !opts.allowFail) {
     process.stderr.write(`  warning: '${args[0]}' exited with code ${r.status}\n`);
@@ -62,16 +63,17 @@ function runCli(args, opts = {}) {
   return r;
 }
 
-async function waitForSession(sessionFile, timeoutMs = 15000) {
+async function waitForFile(file, pick, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const s = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
-      if (s && s.url && s.port) return s;
+      const v = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const got = pick(v);
+      if (got) return v;
     } catch (_) { /* not written yet */ }
     await sleep(200);
   }
-  throw new Error('server never wrote a session.json with a url — did it fail to boot?');
+  throw new Error(`timed out waiting for ${file}`);
 }
 
 // scripts/demo.sh's scripted fix loop, replayed verbatim.
@@ -85,6 +87,15 @@ const EMIT_SEQUENCE = [
   ['--type', 'push', '--status', 'ok'],
   ['--type', 'drafting'],
 ];
+
+// A triage payload tweaked so reviewer-grouping shows two reviewers and the
+// assignee datalist has options.
+function seedTriagePayload(dest) {
+  const pl = JSON.parse(fs.readFileSync(path.join(EXAMPLES, 'payload.triage.json'), 'utf8'));
+  pl.pr.assignableUsers = ['alice', 'bob', 'reviewer1', 'reviewer2'];
+  if (pl.reviewThreads[1] && pl.reviewThreads[1].comments[0]) pl.reviewThreads[1].comments[0].author = 'reviewer2';
+  fs.writeFileSync(dest, JSON.stringify(pl, null, 2));
+}
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -101,24 +112,31 @@ async function main() {
   }
 
   fs.mkdirSync(args.out, { recursive: true });
+
+  // Isolated config dir (templates + the history this run writes) — never the
+  // developer's real ~/.config/pr-replies.
+  const configDir = path.join(os.tmpdir(), 'pr-replies', `preview-cfg-${process.pid}-${Date.now()}`);
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.copyFileSync(path.join(EXAMPLES, 'templates.json'), path.join(configDir, 'templates.json'));
+  const env = Object.assign({}, process.env, { PR_REPLIES_CONFIG_DIR: configDir });
+
   const session = path.join(os.tmpdir(), 'pr-replies', `preview-${process.pid}-${Date.now()}`);
   fs.mkdirSync(session, { recursive: true });
-  fs.copyFileSync(path.join(EXAMPLES, 'payload.triage.json'), path.join(session, 'triage.payload.json'));
+  seedTriagePayload(path.join(session, 'triage.payload.json'));
 
   const lingerSecs = args.keepOpen ? 3600 : 600;
   const server = spawn(
     'node',
     [SRV, 'serve', '--session', session, '--repo-dir', ROOT, '--no-post', '--no-open', '--linger-secs', String(lingerSecs)],
-    { stdio: ['ignore', 'ignore', 'inherit'] }
+    { stdio: ['ignore', 'ignore', 'inherit'], env }
   );
   server.on('error', (e) => process.stderr.write(`failed to start server: ${e.message}\n`));
 
-  // In headed mode, linger on each phase so it's watchable; default 4s, --dwell overrides.
   const dwellMs = args.headed ? (args.dwellSecs != null ? args.dwellSecs : 4) * 1000 : 0;
 
   let browser;
+  let homeServer = null;
   const saved = [];
-  // Settle, screenshot, then dwell so the eye (and the PNG) catch the phase.
   async function shot(page, name) {
     const file = path.join(args.out, name);
     await page.screenshot({ path: file, fullPage: true });
@@ -128,12 +146,14 @@ async function main() {
   }
 
   try {
-    const sess = await waitForSession(path.join(session, 'session.json'));
+    const sess = await waitForFile(path.join(session, 'session.json'), (s) => s.url && s.port);
     const pause = args.headed ? 700 : 150;
     const emitGap = args.headed ? 1200 : 120;
 
     browser = await chromium.launch({ headless: !args.headed, slowMo: args.headed ? 250 : 0 });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
     await page.goto(sess.url, { waitUntil: 'domcontentloaded' });
 
     // ---- triage ----
@@ -143,7 +163,7 @@ async function main() {
     await sleep(pause);
     await shot(page, '01-triage.png');
 
-    // keyboard-shortcut help overlay (drive the app fn directly — layout-agnostic)
+    // keyboard-shortcut help overlay
     await page.evaluate(() => window.PRR.app.toggleHelp('triage'));
     await page.waitForSelector('#help:not([hidden]) .help-card');
     await sleep(pause);
@@ -151,13 +171,20 @@ async function main() {
     await page.evaluate(() => window.PRR.app.toggleHelp(false));
     await page.waitForSelector('#help', { state: 'hidden' });
 
+    // group-by reviewer + an assignee
+    await page.click('.group-seg label:last-child');
+    await page.waitForSelector('.reviewer-group', { timeout: 10000 });
+    await page.fill('.card[data-card] input[data-assignee]', 'alice');
+    await sleep(pause);
+    await shot(page, '01c-triage-grouped-by-reviewer.png');
+
     // ---- submit triage -> fixing ----
     await page.click('#submit');
     process.stderr.write('phase: fixing\n');
     await page.waitForSelector('#timeline', { timeout: 15000 });
 
     for (const e of EMIT_SEQUENCE) {
-      runCli(['emit', '--session', session, ...e]);
+      runCli(['emit', '--session', session, ...e], { env });
       await sleep(emitGap);
     }
     await page.locator('#timeline').getByText('drafting replies', { exact: false }).first()
@@ -167,11 +194,28 @@ async function main() {
 
     // ---- advance -> reply ----
     fs.copyFileSync(path.join(EXAMPLES, 'payload.reply.json'), path.join(session, 'reply.payload.json'));
-    runCli(['advance', '--session', session, '--phase', 'reply']);
+    runCli(['advance', '--session', session, '--phase', 'reply'], { env });
     process.stderr.write('phase: reply\n');
     await page.waitForSelector('.card .draft-tools', { timeout: 15000 });
     await sleep(pause);
     await shot(page, '03-reply.png');
+
+    // assignee + opt-in @-mention on the first reply
+    await page.fill('.card[data-card] input[data-assignee]', 'alice');
+    await page.check('.card[data-card] input[data-mention]');
+    await sleep(pause);
+    await shot(page, '03c-reply-assignee.png');
+
+    // insert-template picker (move focus out of the assignee input first — the
+    // keyboard layer ignores shortcuts while a field is focused, by design)
+    await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await page.keyboard.press('j');
+    await page.keyboard.press('t');
+    await page.waitForSelector('.insert-picker .insert-row', { timeout: 10000 });
+    await sleep(pause);
+    await shot(page, '07b-template-insert.png');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.insert-picker', { state: 'detached' });
 
     // markdown preview on the first draft
     await page.locator('.draft-tools button[data-tab="preview"]').first().click();
@@ -190,17 +234,60 @@ async function main() {
     await sleep(pause);
     await shot(page, '04-done.png');
 
+    // The session has now written a history record into configDir. Stop it so
+    // the hub's dashboard shows it as a finished session.
+    runCli(['stop', '--session', session], { quiet: true, allowFail: true, env });
+    await sleep(300);
+
+    // ---- hub (serve --home) ----
+    process.stderr.write('hub: dashboard / history / templates\n');
+    homeServer = spawn('node', [SRV, 'serve', '--home', '--no-open', '--repo-dir', ROOT], { stdio: ['ignore', 'ignore', 'inherit'], env });
+    const home = await waitForFile(path.join(configDir, 'home.json'), (h) => h.url);
+
+    await page.goto(home.url + '#/dashboard', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dash-body .summary-list, #dash-body .empty-state, #dash-body .dash-actions', { timeout: 15000 });
+    await sleep(pause);
+    await shot(page, '05-dashboard.png');
+
+    // dark theme (driven exactly as the harness drives toggleHelp)
+    await page.evaluate(() => window.PRR.theme.set('dark'));
+    await sleep(pause);
+    await shot(page, '00-dashboard-dark.png');
+    await page.evaluate(() => window.PRR.theme.set('system'));
+
+    await page.goto(home.url + '#/history', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.history-row, .empty-state', { timeout: 15000 });
+    await sleep(pause);
+    await shot(page, '06-history.png');
+
+    const firstRow = page.locator('.history-row').first();
+    if (await firstRow.count()) {
+      await firstRow.click();
+      await page.waitForSelector('.summary-list, .banner', { timeout: 10000 });
+      await sleep(pause);
+      await shot(page, '06b-history-detail.png');
+    }
+
+    await page.goto(home.url + '#/templates', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.tmpl-row, .empty-state', { timeout: 15000 });
+    await sleep(pause);
+    await shot(page, '07-templates.png');
+
+    if (errors.length) throw new Error('page errors during walkthrough:\n  ' + errors.join('\n  '));
+
     process.stderr.write(`\nDone. ${saved.length} screenshots in ${path.relative(ROOT, args.out)}/\n`);
     for (const n of saved) process.stderr.write(`  - ${n}\n`);
 
     if (args.keepOpen) {
-      process.stderr.write('\n--keep-open: browser and server left running. Press Ctrl+C to quit.\n');
+      process.stderr.write('\n--keep-open: browser and servers left running. Press Ctrl+C to quit.\n');
       await new Promise((resolve) => process.once('SIGINT', resolve));
     }
   } finally {
     if (browser) await browser.close().catch(() => {});
-    runCli(['stop', '--session', session, '--cleanup'], { quiet: true, allowFail: true });
-    try { server.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    runCli(['stop', '--session', session, '--cleanup'], { quiet: true, allowFail: true, env });
+    try { if (server) server.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    try { if (homeServer) homeServer.kill('SIGTERM'); } catch (_) { /* already gone */ }
+    fs.rmSync(configDir, { recursive: true, force: true });
   }
 }
 

@@ -139,6 +139,11 @@ Write `$SESSION/triage.payload.json` following EXACTLY the schema of
 with `reviewers`, generatedAt, reviewThreads with viewerCanResolve /
 suggestedAction / confidence / fixPlan / proposedDiff, issueComments likewise).
 
+Optionally include `pr.assignableUsers` (an array of collaborator logins) to
+populate the browser's "assign to a teammate" picker. Reviewer grouping and the
+per-comment assignee/@-mention are entirely browser-side — they need nothing
+else from you, and you never act on them.
+
 Launch the server **in the background** (run_in_background, NOT a foreground
 call — it lives for the whole session):
 
@@ -258,6 +263,13 @@ anyway), so the sentinel result is final:
   `serve --resume`.
 
 ## Step 11 — Report & clean up
+
+The server records an audit entry for every finished session (submitted,
+cancelled, or timed out) to `~/.config/pr-replies/history/` automatically — you
+do not write it. Users browse past sessions, manage reply templates, and see
+which PRs still need attention from the **hub**:
+`node "${CLAUDE_PLUGIN_ROOT}/server/server.js" serve --home` (a payload-less
+dashboard; mention it if the user asks where their history/templates live).
 
 Summarize as a short table: fixes pushed (SHAs), replies posted (URLs),
 threads resolved, skipped, failed (including `resolveErrors`, which are

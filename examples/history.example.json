@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "astromar96-demo-repo-pr42-1718500000",
+  "repo": "astromar96/demo-repo",
+  "pr": 42,
+  "prTitle": "Add caching layer",
+  "prUrl": "https://github.com/astromar96/demo-repo/pull/42",
+  "startedAt": "2026-06-15T10:00:00Z",
+  "endedAt": "2026-06-15T10:42:00Z",
+  "status": "submitted",
+  "dryRun": false,
+  "counts": { "fix": 2, "reply": 3, "skip": 1, "posted": 3, "failed": 0, "resolved": 2 },
+  "decisions": [
+    { "kind": "review", "threadId": "PRRT_kwDOExample001", "action": "fix", "assignee": "alice" },
+    { "kind": "review", "threadId": "PRRT_kwDOExample002", "action": "reply" },
+    { "kind": "issue", "databaseId": 333222111, "action": "fix" }
+  ],
+  "posted": [
+    { "kind": "review", "key": "review:PRRT_kwDOExample001", "path": "src/cache.js", "line": 120, "url": "https://github.com/astromar96/demo-repo/pull/42#discussion_r1" },
+    { "kind": "review", "key": "review:PRRT_kwDOExample002", "path": "src/index.js", "line": 14, "url": "https://github.com/astromar96/demo-repo/pull/42#discussion_r2" },
+    { "kind": "issue", "key": "issue:333222111", "url": "https://github.com/astromar96/demo-repo/pull/42#issuecomment-1" }
+  ],
+  "errors": [],
+  "skipped": [],
+  "resolved": [
+    { "key": "review:PRRT_kwDOExample001", "threadId": "PRRT_kwDOExample001" },
+    { "key": "review:PRRT_kwDOExample002", "threadId": "PRRT_kwDOExample002" }
+  ],
+  "resolveErrors": [],
+  "fixCommits": [
+    { "key": "review:PRRT_kwDOExample001", "sha": "abc1234", "subject": "early return on cache miss" },
+    { "key": "issue:333222111", "sha": "def5678", "subject": "changelog entry" }
+  ]
+}

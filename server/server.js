@@ -43,6 +43,9 @@ const { sessionPaths, writeAtomic, readJson, readEvents, appendEvent, isPidAlive
 const { createState } = require('./lib/state');
 const { createApp } = require('./lib/httpServer');
 const { createGithub } = require('./lib/github');
+const { createDataPlane } = require('./lib/dataPlane');
+const { createHistory } = require('./lib/history');
+const store = require('./lib/store');
 const git = require('./lib/git');
 const { openUrl } = require('./lib/open');
 const { loadConfig } = require('./lib/config');
@@ -66,7 +69,7 @@ function printSentinel(obj) {
 
 // ---------- args ----------
 const FLAG_SPECS = {
-  serve: { session: 's', 'repo-dir': 's', 'start-phase': 's', 'no-post': 'b', 'no-open': 'b', resume: 'b', 'session-timeout-mins': 'n', 'linger-secs': 'n' },
+  serve: { session: 's', home: 'b', 'repo-dir': 's', 'start-phase': 's', 'no-post': 'b', 'no-open': 'b', resume: 'b', 'session-timeout-mins': 'n', 'linger-secs': 'n' },
   wait: { session: 's', phase: 's', 'timeout-secs': 'n' },
   emit: { session: 's', type: 's', item: 's', sha: 's', summary: 's', reason: 's', name: 's', status: 's', detail: 's', text: 's' },
   advance: { session: 's', phase: 's' },
@@ -88,12 +91,18 @@ function parseFlags(cmd, argv) {
       if (spec[name] === 'n' && !Number.isFinite(flags[name])) die(`--${name} must be a number`);
     }
   }
-  if (!flags.session) die(`${cmd} requires --session DIR`);
+  if (cmd === 'serve' && flags.home) {
+    if (flags.session) die('serve: --home and --session are mutually exclusive');
+  } else if (!flags.session) {
+    die(`${cmd} requires --session DIR`);
+  }
   return flags;
 }
 
 // ---------- ui ----------
-const UI_SCRIPTS = ['common.js', 'triage.js', 'progress.js', 'reply.js', 'app.js'];
+// Concatenation order matters: common defines PRR; router/views attach to it;
+// app boots last. dashboard/history/templates register PRR.routes used by router.
+const UI_SCRIPTS = ['common.js', 'router.js', 'triage.js', 'progress.js', 'reply.js', 'dashboard.js', 'history.js', 'templates.js', 'app.js'];
 
 function buildHtml() {
   const uiDir = path.join(__dirname, 'ui');
@@ -135,8 +144,66 @@ function postJson(sess, sub, body, timeoutMs = 5000) {
   });
 }
 
+// ---------- serve --home (cross-session hub: dashboard / history / templates) ----------
+async function cmdServeHome(flags) {
+  const { config, warnings } = loadConfig();
+  for (const w of warnings) logErr(w);
+
+  const homeFile = path.join(store.configDir(), 'home.json');
+  const existing = readJson(homeFile);
+  if (existing && isPidAlive(existing.pid)) {
+    die(`hub already running (pid ${existing.pid}): ${existing.url}`);
+  }
+
+  const repoDir = flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null;
+  const data = createDataPlane({ repoDir, config, mode: 'home' });
+  const clientConfig = {
+    signature: config.signature || '',
+    autoResolveFixedThreads: config.autoResolveFixedThreads !== false,
+    defaultTriageAction: config.defaultTriageAction || null,
+    theme: config.theme || 'system',
+  };
+  const html = buildHtml();
+  const token = crypto.randomBytes(16).toString('hex');
+
+  function cleanHome() {
+    try {
+      const h = readJson(homeFile);
+      if (h && h.pid === process.pid) fs.rmSync(homeFile, { force: true });
+    } catch (_) { /* ignore */ }
+  }
+
+  const app = createApp({
+    state: null,
+    data,
+    snapshot: () => ({ mode: 'home', repo: null, pr: null, config: clientConfig }),
+    token,
+    html: () => html,
+    log: logErr,
+    onShutdown: () => { cleanHome(); setTimeout(() => process.exit(0), 200); },
+  });
+
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  const port = app.server.address().port;
+  const url = `http://127.0.0.1:${port}/${token}/`;
+  fs.mkdirSync(store.configDir(), { recursive: true });
+  writeAtomic(homeFile, { version: 1, pid: process.pid, port, token, url, startedAt: new Date().toISOString() });
+  logErr(`pr-replies hub: ${url}`);
+
+  if (!flags['no-open']) {
+    const ok = await openUrl(url);
+    if (!ok) logErr('could not open browser; open the URL above manually');
+  }
+
+  // The hub is long-lived: no session timeout, no linger auto-exit.
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => { cleanHome(); process.exit(130); });
+  }
+}
+
 // ---------- serve ----------
 async function cmdServe(flags) {
+  if (flags.home) return cmdServeHome(flags);
   const sessionDir = path.resolve(flags.session);
   fs.mkdirSync(sessionDir, { recursive: true });
   const paths = sessionPaths(sessionDir);
@@ -158,7 +225,13 @@ async function cmdServe(flags) {
 
   const stateFlags = { noPost: !!flags['no-post'], repoDir: flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null };
   const github = createGithub({ noPost: stateFlags.noPost });
-  const state = createState({ sessionDir, flags: stateFlags, config, github, git, log: logErr });
+  const history = createHistory({
+    id: path.basename(sessionDir),
+    startedAt: existing && flags.resume ? existing.startedAt : new Date().toISOString(),
+    dryRun: stateFlags.noPost,
+    historyMax: config.historyMax,
+  });
+  const state = createState({ sessionDir, flags: stateFlags, config, github, git, history, log: logErr });
 
   try {
     if (flags.resume) await state.resume(existing.phase);
@@ -178,8 +251,10 @@ async function cmdServe(flags) {
   }
 
   const lingerSecs = flags['linger-secs'] ?? 45;
+  const data = createDataPlane({ repoDir: stateFlags.repoDir, config, mode: 'session' });
   const app = createApp({
     state,
+    data,
     token,
     html: () => html,
     log: logErr,

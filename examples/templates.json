@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "fixed-ack",
+      "name": "Fixed — acknowledge",
+      "scope": "reply",
+      "body": "Fixed in `{{sha}}` — thanks for catching this, @{{author}}.",
+      "tags": ["ack"]
+    },
+    {
+      "id": "out-of-scope",
+      "name": "Out of scope (follow-up)",
+      "scope": "reply",
+      "body": "Good point — this is a bit out of scope for this PR. I've opened a follow-up to track it so we can keep this change focused.",
+      "tags": ["triage"]
+    },
+    {
+      "id": "will-do-followup",
+      "name": "Will do in a follow-up",
+      "scope": "both",
+      "body": "Agreed. I'll handle this in a follow-up PR rather than expand the diff here."
+    },
+    {
+      "id": "clarify",
+      "name": "Ask for clarification",
+      "scope": "reply",
+      "body": "Could you clarify what you'd like here? I want to make sure I address `{{path}}` the way you intended before changing it."
+    }
+  ]
+}

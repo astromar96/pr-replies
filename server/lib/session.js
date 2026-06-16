@@ -21,6 +21,7 @@ function sessionPaths(dir) {
     triageResult: path.join(dir, 'triage.result.json'),
     replyPayload: path.join(dir, 'reply.payload.json'),
     replyResult: path.join(dir, 'reply.result.json'),
+    decisionsDraft: path.join(dir, 'decisions.draft.json'),
     eventsLog: path.join(dir, 'events.jsonl'),
   };
 }
