@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateTriagePayload, validateReplyPayload } = require('../server/lib/schema');
+const { validateTriagePayload, validateReplyPayload, validateTemplates } = require('../server/lib/schema');
 
 // ---------- fixtures ----------
 function triagePayload() {
@@ -150,4 +150,54 @@ test('schema: reply payload rejects non-boolean resolveDefault and non-string dr
   const errors = validateReplyPayload(p);
   assert.ok(hasErrorAt(errors, 'reviewThreads[0].resolveDefault'), errors.join('; '));
   assert.ok(hasErrorAt(errors, 'issueComments[0].draft'), errors.join('; '));
+});
+
+// ---------- templates ----------
+test('schema: validateTemplates accepts a well-formed list', () => {
+  assert.deepEqual(validateTemplates({ version: 1, templates: [] }), []);
+  assert.deepEqual(validateTemplates({ templates: [
+    { id: 'a', name: 'Ack', scope: 'reply', body: 'hi' },
+    { id: 'b', name: 'Both', scope: 'both', body: 'yo', tags: ['x'] },
+  ] }), []);
+});
+
+test('schema: validateTemplates flags missing fields, bad scope, and duplicate ids', () => {
+  assert.ok(validateTemplates(null).length);
+  assert.ok(validateTemplates({}).length);                              // no templates array
+  const e1 = validateTemplates({ templates: [{ id: 'x' }] });           // missing name + body
+  assert.ok(hasErrorAt(e1, 'templates[0].name'), e1.join('; '));
+  assert.ok(hasErrorAt(e1, 'templates[0].body'), e1.join('; '));
+  const e2 = validateTemplates({ templates: [{ id: 'x', name: 'X', body: 'b', scope: 'nope' }] });
+  assert.ok(hasErrorAt(e2, 'templates[0].scope'), e2.join('; '));
+  const e3 = validateTemplates({ templates: [
+    { id: 'dup', name: 'A', body: 'a' }, { id: 'dup', name: 'B', body: 'b' },
+  ] });
+  assert.ok(hasErrorAt(e3, 'templates[1].id'), e3.join('; '));
+});
+
+// ---------- reviewer routing (backward-compatible additions) ----------
+test('schema: payloads validate with AND without assignee / assignableUsers', () => {
+  // baseline (no new fields) still valid
+  assert.deepEqual(validateTriagePayload(triagePayload()), []);
+  assert.deepEqual(validateReplyPayload(replyPayload()), []);
+
+  const t = triagePayload();
+  t.pr.assignableUsers = ['alice', 'bob'];
+  t.reviewThreads[0].assignee = 'alice';
+  t.issueComments[0].assignee = 'bob';
+  assert.deepEqual(validateTriagePayload(t), []);
+
+  const r = replyPayload();
+  r.pr.assignableUsers = ['alice'];
+  r.reviewThreads[0].assignee = 'alice';
+  assert.deepEqual(validateReplyPayload(r), []);
+});
+
+test('schema: malformed assignableUsers / assignee are flagged', () => {
+  const t = triagePayload();
+  t.pr.assignableUsers = 'alice';                 // not an array
+  t.reviewThreads[0].assignee = 7;                // not a string
+  const errors = validateTriagePayload(t);
+  assert.ok(hasErrorAt(errors, 'pr.assignableUsers'), errors.join('; '));
+  assert.ok(hasErrorAt(errors, 'reviewThreads[0].assignee'), errors.join('; '));
 });

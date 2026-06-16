@@ -24,8 +24,9 @@ function httpError(statusCode, message, errors) {
   return e;
 }
 
-function createState({ sessionDir, flags = {}, config = {}, github, git, log = () => {} }) {
+function createState({ sessionDir, flags = {}, config = {}, github, git, history = null, log = () => {} }) {
   const paths = sessionPaths(sessionDir);
+  let recorded = false;
 
   const st = {
     phase: null,
@@ -92,6 +93,37 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, log = (
     };
   }
 
+  // Assemble the audit record from in-memory state; history.js owns the file
+  // format. Recorded at most once per session; never lets a write break a
+  // terminal transition.
+  function buildRecord(status) {
+    const { repo, pr } = api.repoAndPr();
+    const p = anyPayload();
+    return {
+      repo,
+      pr,
+      prTitle: p && p.pr ? p.pr.title : null,
+      prUrl: p && p.pr ? p.pr.url : null,
+      endedAt: new Date().toISOString(),
+      status,
+      decisions: (st.triageResult && st.triageResult.decisions) || [],
+      posted: results.posted,
+      errors: currentFailed(),
+      skipped: results.skipped,
+      resolved: results.resolved,
+      resolveErrors: results.resolveErrors,
+      fixCommits: Object.keys(st.fixCommits || {}).map((key) => ({
+        key, sha: st.fixCommits[key].sha, subject: st.fixCommits[key].subject,
+      })),
+    };
+  }
+
+  function recordHistory(status) {
+    if (recorded || !history) return;
+    recorded = true;
+    try { history.record(buildRecord(status)); } catch (e) { log(`history record failed: ${e.message}`); }
+  }
+
   // Terminal from any phase (stop / session timeout / SIGTERM). Writes the
   // result file the next `wait` would poll for: triage if the user never
   // submitted triage, the reply result otherwise.
@@ -105,6 +137,7 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, log = (
     st.posting = false;
     setPhase('cancelled');
     recordEvent('session_end', { reason });
+    recordHistory(status);
     onTerminalCb(reason);
   }
 
@@ -114,6 +147,7 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, log = (
     st.replyResult = result;
     setPhase('done');
     recordEvent('session_end', { reason });
+    recordHistory(status);
     onTerminalCb(reason);
   }
 
@@ -230,11 +264,13 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, log = (
         writeAtomic(paths.triageResult, { status: 'cancelled', decisions: [], at: new Date().toISOString() });
         setPhase('cancelled');
         recordEvent('session_end', { reason: 'cancelled' });
+        recordHistory('cancelled');
         onTerminalCb('cancelled');
       } else {
         writeAtomic(paths.replyResult, terminalResult('cancelled'));
         setPhase('cancelled');
         recordEvent('session_end', { reason: 'cancelled' });
+        recordHistory('cancelled');
         onTerminalCb('cancelled');
       }
     },
@@ -341,9 +377,16 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, log = (
 
     stop(reason) { terminate(reason === 'timeout' ? 'timeout' : 'cancelled', reason); },
 
+    // Best-effort sidecar mirroring the browser's in-progress assignee/decision
+    // drafts. Never read by the phase machine; just a durable copy.
+    saveDecisionsDraft(obj) {
+      writeAtomic(paths.decisionsDraft, Object.assign({ version: 1, savedAt: new Date().toISOString() }, obj && typeof obj === 'object' ? obj : {}));
+    },
+
     snapshot() {
       const p = anyPayload();
       return {
+        mode: 'session',
         phase: st.phase,
         posting: st.posting,
         abortRequested: st.abortRequested,
@@ -354,6 +397,7 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, log = (
           signature: config.signature || '',
           autoResolveFixedThreads: config.autoResolveFixedThreads !== false,
           defaultTriageAction: config.defaultTriageAction || null,
+          theme: config.theme || 'system',
         },
         triage: { payload: st.triagePayload, result: st.triageResult },
         fixing: { events: st.events },

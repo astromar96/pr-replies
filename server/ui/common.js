@@ -20,7 +20,14 @@ var PRR = {};
     return d + 'd ago';
   };
 
-  PRR.plural = function (n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); };
+  PRR.plural = function (n, word) {
+    if (n === 1) return n + ' ' + word;
+    var plural;
+    if (/(?:s|x|z|ch|sh)$/.test(word)) plural = word + 'es';          // fix → fixes
+    else if (/[^aeiou]y$/.test(word)) plural = word.slice(0, -1) + 'ies'; // reply → replies
+    else plural = word + 's';
+    return n + ' ' + plural;
+  };
 
   // ---------- markdown (GFM-lite, escape-first; everything that reaches the
   // DOM is escaped before any tag is introduced) ----------
@@ -153,14 +160,64 @@ var PRR = {};
     clear: function () {
       try { localStorage.removeItem(this.key); } catch (_) { /* ignore */ }
     },
+    // Value-typed preference store. get() returns the RAW string (or null);
+    // set() writes a boolean as '1'/'0' (legacy autoclose semantics) and any
+    // other value as its string. Callers coerce: e.g. pref('autoclose') === '0'.
     pref: function (name, val) {
       const k = 'prr:pref:' + name;
       if (val === undefined) {
-        const v = localStorage.getItem(k);
-        return v === null ? null : v === '1';
+        return localStorage.getItem(k);
       }
-      try { localStorage.setItem(k, val ? '1' : '0'); } catch (_) { /* ignore */ }
+      try { localStorage.setItem(k, typeof val === 'boolean' ? (val ? '1' : '0') : String(val)); } catch (_) { /* ignore */ }
     },
+  };
+
+  // ---------- theme (light / dark / system) ----------
+  // 'system' (or unset) removes data-theme so the prefers-color-scheme fallback
+  // in ui.css governs. The pre-paint snippet in shell.html applies it first.
+  PRR.theme = {
+    get: function () { return PRR.store.pref('theme') || 'system'; },
+    apply: function (v) {
+      if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v);
+      else document.documentElement.removeAttribute('data-theme');
+    },
+    set: function (v) { PRR.store.pref('theme', v); this.apply(v); },
+    cycle: function () {
+      const next = { light: 'dark', dark: 'system', system: 'light' }[this.get()] || 'light';
+      this.set(next);
+      return next;
+    },
+  };
+
+  PRR.emptyState = function (title, detail) {
+    return '<div class="empty-state"><div class="es-title">' + PRR.esc(title) + '</div>' +
+      (detail ? '<div class="es-detail">' + detail + '</div>' : '') + '</div>';
+  };
+
+  // ---------- templates ----------
+  // Variable substitution: {{author}} {{sha}} {{path}} {{pr}} {{repo}} {{line}}.
+  // Unknown placeholders are left literal. The result is inserted into a
+  // textarea's .value (never innerHTML), so it stays escape-safe by construction.
+  PRR.TEMPLATE_VARS = ['author', 'sha', 'path', 'pr', 'repo', 'line'];
+  PRR.templates = {
+    apply: function (body, ctx) {
+      ctx = ctx || {};
+      return String(body == null ? '' : body).replace(/\{\{(\w+)\}\}/g, function (m, k) {
+        return Object.prototype.hasOwnProperty.call(ctx, k) && ctx[k] != null && ctx[k] !== '' ? String(ctx[k]) : m;
+      });
+    },
+  };
+
+  PRR.templateCtx = function (item, snapshot) {
+    const first = (item.comments && item.comments[0]) || {};
+    return {
+      author: item.author || first.author || '',
+      path: item.path || '',
+      line: item.line != null ? item.line : '',
+      sha: item.fixedIn || '',
+      pr: snapshot && snapshot.pr ? snapshot.pr.number : '',
+      repo: snapshot && snapshot.repo ? snapshot.repo.nameWithOwner : '',
+    };
   };
 
   PRR.debounce = function (fn, ms) {
@@ -242,6 +299,52 @@ var PRR = {};
       ? ':' + (t.startLine != null && t.startLine !== t.line ? t.startLine + '-' : '') + t.line
       : '');
     return '<span class="badge">' + PRR.esc(loc) + '</span>';
+  };
+
+  // ---------- reviewer grouping ----------
+  PRR.threadReviewer = function (t) {
+    return (t.comments && t.comments[0] && t.comments[0].author) || 'unknown';
+  };
+
+  // Stable 1..6 color slot for a login (maps to --reviewer-N tokens).
+  PRR.reviewerColor = function (login) {
+    let h = 0;
+    const s = String(login || '');
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return (h % 6) + 1;
+  };
+
+  // Group threads by path ('file') or first-comment author ('reviewer').
+  PRR.groupThreads = function (threads, mode) {
+    const groups = {};
+    const order = [];
+    threads.forEach(function (t) {
+      const key = mode === 'reviewer' ? PRR.threadReviewer(t) : t.path;
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(t);
+    });
+    order.sort();
+    return order.map(function (k) { return { key: k, threads: groups[k] }; });
+  };
+
+  PRR.groupBy = function () { return PRR.store.pref('groupby') === 'reviewer' ? 'reviewer' : 'file'; };
+
+  PRR.groupSeg = function (mode) {
+    const opts = [['file', 'File'], ['reviewer', 'Reviewer']];
+    return '<span class="footer-note">group by</span><div class="seg group-seg">' + opts.map(function (o) {
+      return '<label><input type="radio" name="groupby" value="' + o[0] + '"' +
+        (o[0] === mode ? ' checked' : '') + '><span>' + o[1] + '</span></label>';
+    }).join('') + '</div>';
+  };
+
+  PRR.groupHeader = function (group, mode, snapshot) {
+    const count = ' <span class="n">· ' + PRR.plural(group.threads.length, 'thread') + '</span>';
+    if (mode === 'reviewer') {
+      return '<div class="file-head reviewer-group">' +
+        '<span class="reviewer-chip" style="background:var(--reviewer-' + PRR.reviewerColor(group.key) + ')"></span>' +
+        PRR.esc(group.key) + PRR.reviewerStateBadge(snapshot, group.key) + count + '</div>';
+    }
+    return '<div class="file-head">' + PRR.esc(group.key) + count + '</div>';
   };
 
   PRR.reviewerStateBadge = function (snapshot, author) {

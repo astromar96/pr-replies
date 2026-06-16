@@ -1,13 +1,14 @@
 {
   "name": "pr-replies",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Triage, fix, and reply to GitHub PR comments in a live browser session (Claude Code plugin)",
   "license": "MIT",
   "scripts": {
     "test": "node --test test/*.test.js",
     "ui:preview": "node scripts/ui-preview.js",
-    "ui:preview:headed": "node scripts/ui-preview.js --headed"
+    "ui:preview:headed": "node scripts/ui-preview.js --headed",
+    "home": "node server/server.js serve --home"
   },
   "devDependencies": {
     "playwright": "^1.48.0"

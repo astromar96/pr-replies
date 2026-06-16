@@ -122,6 +122,9 @@ test('config: CONFIG_PATH and DEFAULTS shape', () => {
     autoResolveFixedThreads: true,
     sessionTimeoutMins: 120,
     waitTimeoutSecs: 540,
+    historyMax: 200,
+    theme: 'system',
+    dashboardListPrs: false,
   });
 });
 
@@ -219,8 +222,27 @@ test('config: valid full file round-trips with no warnings', () => {
     autoResolveFixedThreads: false,
     sessionTimeoutMins: 60,
     waitTimeoutSecs: 300,
+    historyMax: 50,
+    theme: 'dark',
+    dashboardListPrs: true,
   };
   const { config, warnings } = loadConfig({ configPath: writeConfig(JSON.stringify(full)) });
   assert.deepEqual(config, full);
   assert.deepEqual(warnings, []);
+});
+
+test('config: historyMax validated and capped at 2000; theme + dashboardListPrs validated', () => {
+  const capped = loadConfig({ configPath: writeConfig(JSON.stringify({ historyMax: 99999 })) });
+  assert.equal(capped.config.historyMax, 2000);
+  assert.equal(capped.warnings.length, 1);
+  assert.match(capped.warnings[0], /^config: historyMax capped at 2000/);
+
+  const badTheme = loadConfig({ configPath: writeConfig(JSON.stringify({ theme: 'neon' })) });
+  assert.equal(badTheme.config.theme, 'system');
+  assert.equal(badTheme.warnings.length, 1);
+  assert.match(badTheme.warnings[0], /^config: theme/);
+
+  const badList = loadConfig({ configPath: writeConfig(JSON.stringify({ dashboardListPrs: 'yes' })) });
+  assert.equal(badList.config.dashboardListPrs, false);
+  assert.equal(badList.warnings.length, 1);
 });

@@ -5,11 +5,27 @@
 #
 #   scripts/demo.sh              # full flow
 #   scripts/demo.sh reply-only   # --start-phase reply fast path
+#   scripts/demo.sh home         # the cross-session hub (dashboard/history/templates)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRV="$ROOT/server/server.js"
 MODE="${1:-full}"
+
+# The hub needs no session dir; it serves the dashboard/history/templates routes
+# from a seeded, throwaway config dir so it never touches your real ~/.config.
+if [ "$MODE" = "home" ]; then
+  CFG="$(mktemp -d "${TMPDIR:-/tmp}/pr-replies-home.XXXXXX")"
+  cp "$ROOT/examples/templates.json" "$CFG/templates.json"
+  mkdir -p "$CFG/history"
+  cp "$ROOT/examples/history.example.json" "$CFG/history/astromar96-demo-repo-pr42-1718500000.json"
+  cleanup_home() { rm -rf "$CFG"; }
+  trap cleanup_home EXIT
+  echo "--- hub: dashboard / history / templates (Ctrl+C to quit) ---"
+  PR_REPLIES_CONFIG_DIR="$CFG" node "$SRV" serve --home --repo-dir "$ROOT"
+  exit 0
+fi
+
 SESSION="/tmp/pr-replies/demo-pr42-$(date +%s)"
 mkdir -p "$SESSION"
 

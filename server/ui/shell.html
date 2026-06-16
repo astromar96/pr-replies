@@ -4,9 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pr-replies</title>
+<script>
+/* Pre-paint theme bootstrap: apply a saved light/dark choice before first paint
+   so there is no flash. An unset choice (or "system") leaves data-theme off, so
+   the @media(prefers-color-scheme) fallback in ui.css governs — today's behavior. */
+(function () {
+  try {
+    var t = localStorage.getItem('prr:pref:theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { /* private mode / no storage */ }
+})();
+</script>
 <!--STYLES-->
 </head>
 <body>
+<nav id="nav" hidden></nav>
 <main class="wrap" id="app"><div class="boot">Loading session…</div></main>
 <footer id="footer"></footer>
 <div id="help" class="overlay" hidden></div>

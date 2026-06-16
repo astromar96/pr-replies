@@ -10,6 +10,8 @@
 
 const http = require('node:http');
 
+const { validateTemplates } = require('./schema');
+
 const MAX_BODY_BYTES = 1024 * 1024;
 const SSE_KEEPALIVE_MS = 25000;
 
@@ -49,15 +51,21 @@ function readJsonBody(req) {
   });
 }
 
-function createApp({ state, token, html, onShutdown = () => {}, log = () => {} }) {
+// `state` is null in home (hub) mode — then only GET / + the read-only data
+// plane are served; phase routes and SSE 404. `snapshot` overrides how GET
+// /state is built (home mode supplies its own); `data` powers GET/POST data/*.
+function createApp({ state = null, data = null, snapshot = null, token, html, onShutdown = () => {}, log = () => {} }) {
   const sseClients = new Set();
+  const getSnapshot = snapshot || (state ? () => state.snapshot() : () => ({ mode: 'home' }));
 
-  state.onEvent((event) => {
-    const frame = `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`;
-    for (const res of sseClients) {
-      try { res.write(frame); } catch (_) { sseClients.delete(res); }
-    }
-  });
+  if (state) {
+    state.onEvent((event) => {
+      const frame = `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`;
+      for (const res of sseClients) {
+        try { res.write(frame); } catch (_) { sseClients.delete(res); }
+      }
+    });
+  }
 
   const keepalive = setInterval(() => {
     for (const res of sseClients) {
@@ -81,16 +89,51 @@ function createApp({ state, token, html, onShutdown = () => {}, log = () => {} }
     req.on('close', () => sseClients.delete(res));
   }
 
+  async function handleDataGet(res, sub, query) {
+    if (!data) return respond(res, 404, 'text/plain', 'not found');
+    if (sub === 'data/dashboard') return respondJson(res, 200, await data.dashboard({ prs: query.get('prs') === '1' }));
+    if (sub === 'data/sessions') return respondJson(res, 200, { sessions: data.sessions() });
+    if (sub === 'data/prs') return respondJson(res, 200, await data.prs(true));
+    if (sub === 'data/history') return respondJson(res, 200, { history: data.history() });
+    if (sub === 'data/templates') return respondJson(res, 200, { templates: data.templates() });
+    if (sub.startsWith('data/history/')) {
+      const rec = data.historyDetail(sub.slice('data/history/'.length));
+      if (!rec) return respond(res, 404, 'text/plain', 'not found');
+      return respondJson(res, 200, rec);
+    }
+    return respond(res, 404, 'text/plain', 'not found');
+  }
+
+  async function handleDataPost(res, sub, body) {
+    if (!data) return respond(res, 404, 'text/plain', 'not found');
+    if (sub === 'data/templates') {
+      const errors = validateTemplates(body);
+      if (errors.length) return respondJson(res, 400, { error: 'templates failed validation', errors });
+      return respondJson(res, 200, { templates: data.saveTemplates(body.templates) });
+    }
+    if (sub === 'data/decisions') {
+      // Session-mode sidecar mirroring localStorage; never read by the phase machine.
+      if (!state || !state.saveDecisionsDraft) return respond(res, 404, 'text/plain', 'not found');
+      state.saveDecisionsDraft(body);
+      return respondJson(res, 200, { ok: true });
+    }
+    return respond(res, 404, 'text/plain', 'not found');
+  }
+
   async function route(req, res, sub, query) {
     if (req.method === 'GET') {
       if (sub === '' || sub === '/') return respond(res, 200, 'text/html; charset=utf-8', html());
-      if (sub === 'state') return respondJson(res, 200, state.snapshot());
-      if (sub === 'events') return handleSse(req, res, query);
+      if (sub === 'state') return respondJson(res, 200, getSnapshot());
+      if (sub === 'events') return state ? handleSse(req, res, query) : respond(res, 404, 'text/plain', 'not found');
+      if (sub === 'data' || sub.startsWith('data/')) return handleDataGet(res, sub, query);
       return respond(res, 404, 'text/plain', 'not found');
     }
     if (req.method !== 'POST') return respond(res, 404, 'text/plain', 'not found');
 
     const body = await readJsonBody(req);
+    if (sub === 'data' || sub.startsWith('data/')) return handleDataPost(res, sub, body);
+    // Phase/control routes require a live session (home mode has none).
+    if (!state) return respond(res, 404, 'text/plain', 'not found');
     switch (sub) {
       case 'triage/submit':
         state.submitTriage(body.decisions);

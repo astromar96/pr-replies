@@ -31,6 +31,12 @@
       '<div class="hint">' + hint + '</div>';
   }
 
+  function assigneeMentionRow(key) {
+    return '<div class="assignee"><label>Assign</label>' +
+      '<input list="prr-assignees" data-assignee="' + PRR.esc(key) + '" placeholder="teammate (optional)">' +
+      '<label class="mention-label"><input type="checkbox" data-mention="' + PRR.esc(key) + '"> mention @ in reply</label></div>';
+  }
+
   function threadCard(snapshot, t) {
     const key = PRR.itemKey(t);
     const autoResolve = snapshot.config.autoResolveFixedThreads;
@@ -51,6 +57,7 @@
       '<input type="checkbox" data-resolve="' + PRR.esc(key) + '"' +
       (resolveOn && t.viewerCanResolve ? ' checked' : '') + (t.viewerCanResolve ? '' : ' disabled') + '>' +
       ' Resolve thread after replying</div>' +
+      assigneeMentionRow(key) +
       '</div></div>';
   }
 
@@ -65,6 +72,7 @@
       fixCommitHtml(snapshot, key, c) +
       '<div class="controls">' + seg2(key, true) +
       draftHtml(key, c.draft, 'Posts as a new top-level PR comment (GitHub has no threading here).') +
+      assigneeMentionRow(key) +
       '</div></div>';
   }
 
@@ -100,14 +108,14 @@
       return !!(s && (s.status === 'posted' || s.status === 'interrupted'));
     },
 
-    render: function (snapshot) {
+    render: function (snapshot, opts) {
       const self = this;
       const P = snapshot.reply.payload;
       const app = document.getElementById('app');
 
-      const byFile = {};
-      P.reviewThreads.forEach(function (t) { (byFile[t.path] = byFile[t.path] || []).push(t); });
-      const files = Object.keys(byFile).sort();
+      const mode = PRR.groupBy();
+      const groups = PRR.groupThreads(P.reviewThreads, mode);
+      const assignees = (P.pr && P.pr.assignableUsers) || [];
 
       let html =
         '<div class="view"><header><h1><a href="' + PRR.esc(P.pr.url) + '" target="_blank" rel="noopener">' + PRR.esc(P.pr.title) + '</a></h1>' +
@@ -115,12 +123,15 @@
         PRR.esc(P.repo.nameWithOwner) + '#' + P.pr.number + '</a>' +
         ' · <b>review and send replies</b> · <kbd>?</kbd> shortcuts</div></header>';
 
-      html += files.map(function (f) {
-        return '<div class="file-group"><div class="file-head">' + PRR.esc(f) +
-          ' <span class="n">· ' + PRR.plural(byFile[f].length, 'thread') + '</span></div>' +
-          byFile[f].map(function (t) { return threadCard(snapshot, t); }).join('') + '</div>';
+      html += '<div class="toolbar"><div class="row"><span class="spacer"></span>' + PRR.groupSeg(mode) + '</div></div>';
+      html += '<datalist id="prr-assignees">' +
+        assignees.map(function (a) { return '<option value="' + PRR.esc(a) + '"></option>'; }).join('') + '</datalist>';
+
+      html += groups.map(function (g) {
+        return '<div class="file-group">' + PRR.groupHeader(g, mode, snapshot) +
+          g.threads.map(function (t) { return threadCard(snapshot, t); }).join('') + '</div>';
       }).join('');
-      if (!files.length) html += '<h2>Review threads</h2><p class="empty">No review threads.</p>';
+      if (!groups.length) html += '<h2>Review threads</h2><p class="empty">No review threads.</p>';
 
       html += '<h2>General comments</h2>';
       html += P.issueComments.length
@@ -131,7 +142,7 @@
 
       this.renderFooter(snapshot);
       this.wire(snapshot);
-      this.restoreDrafts(snapshot);
+      this.restoreDrafts(snapshot, { silent: !!(opts && opts.silentRestore) });
 
       // refresh mid- or post-posting: replay item statuses
       Object.keys(snapshot.reply.itemStatus || {}).forEach(function (key) {
@@ -147,7 +158,7 @@
         (snapshot.noPost ? '<span class="footer-note">dry run — nothing will be posted</span>' : '') +
         (snapshot.config.signature ? '<span class="footer-note">signature appended automatically</span>' : '') +
         '<label class="autoclose" title="Close this tab automatically when the session finishes">' +
-        '<input type="checkbox" id="autoclose"' + (autoClose === false ? '' : ' checked') + '> Auto-close tab</label>' +
+        '<input type="checkbox" id="autoclose"' + (autoClose === '0' ? '' : ' checked') + '> Auto-close tab</label>' +
         '<span id="extra-actions"></span>' +
         '<button id="cancel">Cancel — post nothing</button>' +
         '<button id="submit" class="primary"></button>');
@@ -159,29 +170,41 @@
     wire: function (snapshot) {
       const self = this;
       const app = document.getElementById('app');
+      self._snap = snapshot;
       this.ring = PRR.focusRing();
 
-      // edit/preview tabs
-      app.addEventListener('click', function (ev) {
-        const btn = ev.target.closest('.draft-tools button');
-        if (!btn) return;
-        const key = btn.dataset.key;
-        const ta = document.querySelector('textarea[data-text="' + CSS.escape(key) + '"]');
-        const pv = document.querySelector('[data-preview="' + CSS.escape(key) + '"]');
-        const isPreview = btn.dataset.tab === 'preview';
-        btn.parentElement.querySelectorAll('button').forEach(function (b) {
-          b.classList.toggle('active', b === btn);
+      // Delegated #app listeners survive innerHTML re-renders, so attach once
+      // (a group-by toggle re-renders into the same #app). They read self._snap.
+      if (!this._wired) {
+        this._wired = true;
+        app.addEventListener('click', function (ev) {
+          const btn = ev.target.closest('.draft-tools button');
+          if (!btn) return;
+          const key = btn.dataset.key;
+          const ta = document.querySelector('textarea[data-text="' + CSS.escape(key) + '"]');
+          const pv = document.querySelector('[data-preview="' + CSS.escape(key) + '"]');
+          const isPreview = btn.dataset.tab === 'preview';
+          btn.parentElement.querySelectorAll('button').forEach(function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          ta.hidden = isPreview;
+          pv.hidden = !isPreview;
+          if (isPreview) pv.innerHTML = PRR.renderMarkdown(ta.value) || '<span class="empty">nothing to preview</span>';
         });
-        ta.hidden = isPreview;
-        pv.hidden = !isPreview;
-        if (isPreview) pv.innerHTML = PRR.renderMarkdown(ta.value) || '<span class="empty">nothing to preview</span>';
+        const persist = PRR.debounce(function () { self.persist(self._snap); }, 300);
+        app.addEventListener('change', function () { self.updateFooter(self._snap); persist(); });
+        app.addEventListener('input', function () { self.updateFooter(self._snap); persist(); });
+      }
+
+      document.querySelectorAll('input[name="groupby"]').forEach(function (el) {
+        el.addEventListener('change', function () {
+          self.persist(self._snap);
+          PRR.store.pref('groupby', el.value);
+          self.render(self._snap, { silentRestore: true });
+        });
       });
 
-      const persist = PRR.debounce(function () { self.persist(snapshot); }, 300);
-      app.addEventListener('change', function () { self.updateFooter(snapshot); persist(); });
-      app.addEventListener('input', function () { self.updateFooter(snapshot); persist(); });
-
-      document.getElementById('submit').addEventListener('click', function () { self.submit(snapshot, false); });
+      document.getElementById('submit').addEventListener('click', function () { self.submit(self._snap, false); });
       document.getElementById('cancel').addEventListener('click', function () {
         self.lock('Cancelling…');
         PRR.api.post('reply/cancel').catch(function () { /* terminal arrives over SSE */ });
@@ -218,6 +241,14 @@
           const card = self.ring.current();
           const d = card && card.querySelector('details');
           if (d) d.open = !d.open;
+        },
+        't': function () {
+          const card = self.ring.current();
+          if (!card) return;
+          const ta = card.querySelector('textarea[data-text]');
+          if (!ta || ta.hidden) return;
+          const it = self.allItems(snapshot).find(function (x) { return x.key === card.dataset.card; });
+          PRR.templates.openPicker(ta, 'reply', it ? PRR.templateCtx(it.item, snapshot) : {});
         },
         '?': function () { PRR.app.toggleHelp('reply'); },
         'escape': function () {
@@ -269,6 +300,16 @@
       }
     },
 
+    getAssignee: function (key) {
+      const el = document.querySelector('input[data-assignee="' + CSS.escape(key) + '"]');
+      return el ? el.value.trim() : '';
+    },
+
+    getMention: function (key) {
+      const el = document.querySelector('input[data-mention="' + CSS.escape(key) + '"]');
+      return !!(el && el.checked);
+    },
+
     persist: function (snapshot) {
       const self = this;
       const reply = {};
@@ -278,35 +319,48 @@
           draft: self.getText(it.key),
           include: self.getAction(it.key) === 'reply',
           resolve: cb ? cb.checked : false,
+          assignee: self.getAssignee(it.key),
+          mention: self.getMention(it.key),
         };
       });
       PRR.store.save({ reply: reply });
+      PRR.api.post('data/decisions', { reply: reply }).catch(function () {});
     },
 
-    restoreDrafts: function (snapshot) {
+    applySaved: function (snapshot, saved) {
+      const self = this;
+      this.allItems(snapshot).forEach(function (it) {
+        const s = saved[it.key];
+        if (!s || self.isPosted(snapshot, it.key)) return;
+        const ta = document.querySelector('textarea[data-text="' + CSS.escape(it.key) + '"]');
+        if (ta && s.draft) ta.value = s.draft;
+        const input = document.querySelector('input[name="seg-' + CSS.escape(it.key) + '"][value="' + (s.include === false ? 'skip' : 'reply') + '"]');
+        if (input) input.checked = true;
+        const cb = document.querySelector('input[data-resolve="' + CSS.escape(it.key) + '"]');
+        if (cb && !cb.disabled) cb.checked = !!s.resolve;
+        const ai = document.querySelector('input[data-assignee="' + CSS.escape(it.key) + '"]');
+        if (ai && s.assignee) ai.value = s.assignee;
+        const mn = document.querySelector('input[data-mention="' + CSS.escape(it.key) + '"]');
+        if (mn) mn.checked = !!s.mention;
+      });
+      this.updateFooter(snapshot);
+    },
+
+    restoreDrafts: function (snapshot, opts) {
       const self = this;
       const saved = PRR.store.load().reply;
       if (!saved) return;
+      if (opts && opts.silent) { this.applySaved(snapshot, saved); return; }
       const dirty = this.allItems(snapshot).some(function (it) {
         const s = saved[it.key];
-        return s && s.draft && s.draft !== (it.item.draft || '');
+        return s && ((s.draft && s.draft !== (it.item.draft || '')) || s.assignee);
       });
       if (!dirty) return;
       const banner = PRR.banner('warn',
         'Found reply edits from ' + PRR.relTime(PRR.store.load().savedAt) + '.',
         '<button class="small" id="restore-yes">Restore</button><button class="small" id="restore-no">Dismiss</button>');
       banner.querySelector('#restore-yes').addEventListener('click', function () {
-        self.allItems(snapshot).forEach(function (it) {
-          const s = saved[it.key];
-          if (!s || self.isPosted(snapshot, it.key)) return;
-          const ta = document.querySelector('textarea[data-text="' + CSS.escape(it.key) + '"]');
-          if (ta && s.draft) ta.value = s.draft;
-          const input = document.querySelector('input[name="seg-' + CSS.escape(it.key) + '"][value="' + (s.include ? 'reply' : 'skip') + '"]');
-          if (input) input.checked = true;
-          const cb = document.querySelector('input[data-resolve="' + CSS.escape(it.key) + '"]');
-          if (cb && !cb.disabled) cb.checked = !!s.resolve;
-        });
-        self.updateFooter(snapshot);
+        self.applySaved(snapshot, saved);
         banner.remove();
       });
       banner.querySelector('#restore-no').addEventListener('click', function () { banner.remove(); });
@@ -344,9 +398,14 @@
       const replies = [], skipped = [];
       this.allItems(snapshot).forEach(function (it) {
         if (self.isLocked(snapshot, it.key)) return;
-        const body = self.getText(it.key).trim();
+        let body = self.getText(it.key).trim();
         const include = self.getAction(it.key) === 'reply' && body;
         if (include) {
+          // Opt-in @-mention: prepend the assignee unless it's already there.
+          const assignee = self.getAssignee(it.key);
+          if (assignee && self.getMention(it.key) && body.indexOf('@' + assignee) === -1) {
+            body = '@' + assignee + ' ' + body;
+          }
           const r = { kind: it.kind, key: it.key, body: body };
           if (it.kind === 'review') {
             r.threadId = it.item.id;
@@ -434,6 +493,7 @@
       ['j / k', 'next / previous reply'],
       ['1 / 2', 'set Reply / Skip'],
       ['e', 'edit draft'],
+      ['t', 'insert a template'],
       ['p', 'toggle markdown preview'],
       ['x', 'toggle resolve thread'],
       ['o', 'toggle thread / diff'],
