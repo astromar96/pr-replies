@@ -100,9 +100,20 @@ function parseFlags(cmd, argv) {
 }
 
 // ---------- ui ----------
-// Concatenation order matters: common defines PRR; router/views attach to it;
-// app boots last. dashboard/history/templates register PRR.routes used by router.
-const UI_SCRIPTS = ['common.js', 'router.js', 'triage.js', 'progress.js', 'reply.js', 'dashboard.js', 'history.js', 'templates.js', 'app.js'];
+// The React UI ships unbundled: vendored React/ReactDOM/htm UMD bundles run
+// first (attaching window.React/ReactDOM/htm), then the app modules attach to
+// the shared PRR namespace, then main.js boots. Everything is concatenated into
+// one inline <script> at serve time — no build step, same as before. Order
+// matters: foundation (h/util/stores/keys/components) → views → App → main.
+const VENDOR_SCRIPTS = ['react.production.min.js', 'react-dom.production.min.js', 'htm.umd.js']
+  .map((f) => path.join('vendor', f));
+const APP_SCRIPTS = [
+  'h.js', 'util.js', 'stores.js', 'keys.js', 'components.js',
+  'views/triage.js', 'views/progress.js', 'views/reply.js', 'views/final.js',
+  'views/dashboard.js', 'views/history.js', 'views/templates.js',
+  'App.js', 'main.js',
+].map((f) => path.join('app', f));
+const UI_SCRIPTS = [...VENDOR_SCRIPTS, ...APP_SCRIPTS];
 
 function buildHtml() {
   const uiDir = path.join(__dirname, 'ui');

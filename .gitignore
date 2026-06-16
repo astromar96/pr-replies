@@ -2,3 +2,5 @@
 node_modules/
 *.log
 test/ui/screenshots/
+.playwright-mcp/
+.claude/
