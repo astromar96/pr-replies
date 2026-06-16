@@ -6,11 +6,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// Load server/ui/common.js in a sandbox with the minimal browser globals it
-// touches at load time, then exercise the pure PRR helpers.
+// Load server/ui/app/util.js in a sandbox with the minimal browser globals it
+// touches at load time, then exercise the pure PRR helpers. util.js attaches to
+// a pre-existing PRR namespace (created by h.js in the browser), so seed it.
 function loadPRR() {
-  const code = fs.readFileSync(path.join(__dirname, '..', 'server', 'ui', 'common.js'), 'utf8');
+  const code = fs.readFileSync(path.join(__dirname, '..', 'server', 'ui', 'app', 'util.js'), 'utf8');
   const sandbox = {
+    PRR: {},
     document: { addEventListener() {} },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     Date,

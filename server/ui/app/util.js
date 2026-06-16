@@ -1,8 +1,10 @@
 'use strict';
-/* Shared toolkit. Every ui file attaches to the PRR namespace; the server
- * concatenates them in order (common, triage, progress, reply, app). */
-var PRR = {};
-
+/* Pure helpers — text, markdown, diffs, the HTTP/SSE client, localStorage, and
+ * the reviewer-grouping logic. Ported (mostly verbatim) from the original
+ * common.js: these are framework-agnostic and reused by every React view.
+ * renderMarkdown / renderDiff still return escape-first HTML strings — the <Md>
+ * and <Diff> components feed them through dangerouslySetInnerHTML, so the same
+ * "escape before any tag is introduced" safety property holds. */
 (function () {
   // ---------- text ----------
   PRR.esc = function (s) {
@@ -172,34 +174,21 @@ var PRR = {};
     },
   };
 
-  // ---------- theme (light / dark / system) ----------
-  // 'system' (or unset) removes data-theme so the prefers-color-scheme fallback
-  // in ui.css governs. The pre-paint snippet in shell.html applies it first.
-  PRR.theme = {
-    get: function () { return PRR.store.pref('theme') || 'system'; },
-    apply: function (v) {
-      if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v);
-      else document.documentElement.removeAttribute('data-theme');
-    },
-    set: function (v) { PRR.store.pref('theme', v); this.apply(v); },
-    cycle: function () {
-      const next = { light: 'dark', dark: 'system', system: 'light' }[this.get()] || 'light';
-      this.set(next);
-      return next;
-    },
-  };
-
-  PRR.emptyState = function (title, detail) {
-    return '<div class="empty-state"><div class="es-title">' + PRR.esc(title) + '</div>' +
-      (detail ? '<div class="es-detail">' + detail + '</div>' : '') + '</div>';
-  };
-
   // ---------- templates ----------
   // Variable substitution: {{author}} {{sha}} {{path}} {{pr}} {{repo}} {{line}}.
   // Unknown placeholders are left literal. The result is inserted into a
   // textarea's .value (never innerHTML), so it stays escape-safe by construction.
   PRR.TEMPLATE_VARS = ['author', 'sha', 'path', 'pr', 'repo', 'line'];
   PRR.templates = {
+    _cache: null,
+    invalidate: function () { PRR.templates._cache = null; },
+    load: function () {
+      if (PRR.templates._cache) return Promise.resolve(PRR.templates._cache);
+      return PRR.api.get('data/templates').then(function (d) {
+        PRR.templates._cache = d.templates || [];
+        return PRR.templates._cache;
+      });
+    },
     apply: function (body, ctx) {
       ctx = ctx || {};
       return String(body == null ? '' : body).replace(/\{\{(\w+)\}\}/g, function (m, k) {
@@ -228,77 +217,15 @@ var PRR = {};
     };
   };
 
-  // ---------- keyboard ----------
-  PRR.keys = (function () {
-    const scopes = {};
-    let active = null;
-    function register(name, bindings) { scopes[name] = bindings; }
-    function setScope(name) { active = name; }
-    document.addEventListener('keydown', function (ev) {
-      const tag = ev.target && ev.target.tagName;
-      const typing = tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT';
-      let combo = ev.key === ' ' ? 'space' : ev.key.toLowerCase();
-      if (ev.metaKey || ev.ctrlKey) combo = 'mod+' + combo;
-      if (typing && combo !== 'mod+enter' && combo !== 'escape') return;
-      const bindings = (active && scopes[active]) || {};
-      const handler = bindings[combo] || (scopes['*'] || {})[combo];
-      if (handler) {
-        ev.preventDefault();
-        handler(ev);
-      }
-    });
-    return { register: register, setScope: setScope };
-  })();
-
-  // ---------- card focus ring (j/k navigation over visible cards) ----------
-  PRR.focusRing = function () {
-    let idx = -1;
-    function cards() {
-      return Array.prototype.slice.call(document.querySelectorAll('.card:not(.hidden)'));
-    }
-    function apply(list) {
-      list.forEach(function (c, i) { c.classList.toggle('focused', i === idx); });
-      if (idx >= 0 && list[idx]) list[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-    return {
-      move: function (delta) {
-        const list = cards();
-        if (!list.length) return;
-        idx = Math.max(0, Math.min(list.length - 1, idx + delta));
-        apply(list);
-      },
-      current: function () {
-        const list = cards();
-        return idx >= 0 ? list[idx] : null;
-      },
-      reset: function () { idx = -1; apply(cards()); },
-    };
-  };
-
-  // ---------- misc dom ----------
-  PRR.html = function (parent, html) {
-    parent.innerHTML = html;
-    return parent;
-  };
-
-  PRR.banner = function (cls, html, actions) {
-    const div = document.createElement('div');
-    div.className = 'banner ' + cls;
-    div.innerHTML = html + (actions ? '<div class="actions">' + actions + '</div>' : '');
-    const app = document.getElementById('app');
-    app.insertBefore(div, app.firstChild);
-    return div;
-  };
-
+  // ---------- item keys + location labels ----------
   PRR.itemKey = function (item) {
     return item.id ? 'review:' + item.id : 'issue:' + item.databaseId;
   };
 
-  PRR.locBadge = function (t) {
-    const loc = t.path + (t.line != null
+  PRR.locText = function (t) {
+    return t.path + (t.line != null
       ? ':' + (t.startLine != null && t.startLine !== t.line ? t.startLine + '-' : '') + t.line
       : '');
-    return '<span class="badge">' + PRR.esc(loc) + '</span>';
   };
 
   // ---------- reviewer grouping ----------
@@ -327,43 +254,9 @@ var PRR = {};
     return order.map(function (k) { return { key: k, threads: groups[k] }; });
   };
 
-  PRR.groupBy = function () { return PRR.store.pref('groupby') === 'reviewer' ? 'reviewer' : 'file'; };
-
-  PRR.groupSeg = function (mode) {
-    const opts = [['file', 'File'], ['reviewer', 'Reviewer']];
-    return '<span class="footer-note">group by</span><div class="seg group-seg">' + opts.map(function (o) {
-      return '<label><input type="radio" name="groupby" value="' + o[0] + '"' +
-        (o[0] === mode ? ' checked' : '') + '><span>' + o[1] + '</span></label>';
-    }).join('') + '</div>';
-  };
-
-  PRR.groupHeader = function (group, mode, snapshot) {
-    const count = ' <span class="n">· ' + PRR.plural(group.threads.length, 'thread') + '</span>';
-    if (mode === 'reviewer') {
-      return '<div class="file-head reviewer-group">' +
-        '<span class="reviewer-chip" style="background:var(--reviewer-' + PRR.reviewerColor(group.key) + ')"></span>' +
-        PRR.esc(group.key) + PRR.reviewerStateBadge(snapshot, group.key) + count + '</div>';
-    }
-    return '<div class="file-head">' + PRR.esc(group.key) + count + '</div>';
-  };
-
-  PRR.reviewerStateBadge = function (snapshot, author) {
-    const reviewers = (snapshot.pr && snapshot.pr.reviewers) || [];
+  PRR.reviewerState = function (snapshot, author) {
+    const reviewers = (snapshot && snapshot.pr && snapshot.pr.reviewers) || [];
     const r = reviewers.find(function (x) { return x.login === author; });
-    if (!r) return '';
-    if (r.state === 'CHANGES_REQUESTED') return '<span class="badge state state-changes">changes requested</span>';
-    if (r.state === 'APPROVED') return '<span class="badge state state-approved">approved</span>';
-    return '';
+    return r ? r.state : null;
   };
-
-  PRR.renderComments = function (snapshot, comments) {
-    return comments.map(function (c) {
-      return '<div class="comment"><div class="meta"><b>' + PRR.esc(c.author) + '</b>' +
-        PRR.reviewerStateBadge(snapshot, c.author) +
-        '<span>· ' + PRR.esc(PRR.relTime(c.createdAt)) + '</span></div>' +
-        PRR.renderMarkdown(c.body) + '</div>';
-    }).join('');
-  };
-
-  PRR.views = {};
 })();

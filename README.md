@@ -35,7 +35,7 @@ reviewer**, and each comment can be tagged with a teammate to handle — see
 ## Requirements
 
 - [GitHub CLI](https://cli.github.com) (`gh`) installed and authenticated (`gh auth login`)
-- Node.js 18+ (no npm packages — server and UI are dependency-free, no build step)
+- Node.js 18+ (no install, no build step — the React UI ships as vendored static files and is served unbundled)
 - macOS, Linux, or Windows (browser launch uses `open` / `xdg-open` / `start`)
 
 ## Install
@@ -146,10 +146,15 @@ stop --session DIR
   and exposes only a read-only data plane (`GET /{token}/data/*`) backed by
   `server/lib/{dataPlane,store,history}.js` — the dashboard, history, and
   templates, all read from local JSON. Phase routes 404 in this mode.
-- `server/ui/` is a vanilla-JS single page (concatenated at serve time — no
-  build step) that boots from `GET /state` and listens on `GET /events` (SSE).
-  A thin hash router (`server/ui/router.js`) layers the Dashboard / History /
-  Templates routes over the per-PR phase views, which it never repaints. No
+- `server/ui/` is a **React single page with no build step**. The vendored
+  React + [htm](https://github.com/developit/htm) UMD bundles
+  (`server/ui/vendor/`) and the app modules (`server/ui/app/`) are concatenated
+  into one inline `<script>` at serve time — htm parses the JSX-free
+  tagged-template markup at runtime, so there is nothing to compile or install.
+  The app boots from `GET /state` and listens on `GET /events` (SSE); external
+  stores (`app/stores.js`) bridge that state into React via
+  `useSyncExternalStore`. A hash router in `app/App.js` layers the Dashboard /
+  History / Templates routes over the per-PR phase views (`app/views/`). No
   payload is ever injected into the HTML.
 - Inline replies land **inside the review thread** (GraphQL
   `addPullRequestReviewThreadReply`, REST fallback); general comments post as
@@ -189,9 +194,9 @@ scripts/demo.sh home         # the dashboard / history / templates hub
 
 `npm run ui:preview` boots the real server (session **and** hub) and drives the
 whole UI with Playwright, screenshotting every route into `test/ui/screenshots/`.
-Because the entire vanilla-JS bundle is concatenated and served, it doubles as an
-integration test: any load-order or `ReferenceError` regression makes a route
-throw and fails the run.
+Because the entire React bundle is concatenated and served, it doubles as an
+integration test: any load-order, render, or `ReferenceError` regression makes a
+route throw (a page error the harness fails on).
 
 To exercise crash recovery: kill the `serve` pid mid-triage, then
 `node server/server.js serve --session <dir> --resume`.
