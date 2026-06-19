@@ -1,0 +1,39 @@
+name: release
+
+# Publishing a release is fully automated: bump the version locally with
+#   npm version <patch|minor|major>
+# which syncs plugin.json, commits, tags v<version>, and pushes the tag. This
+# workflow fires on that tag, re-runs the tests, verifies the tag matches the
+# manifest version, and creates the GitHub release with auto-generated notes.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run tests
+        run: npm test
+      - name: Verify tag matches manifest version
+        run: |
+          npm run check:version
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg"
+            exit 1
+          fi
+          echo "tag matches version $pkg"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
