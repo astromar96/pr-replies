@@ -56,11 +56,11 @@
         ${item.fixPlan ? html`<div className="fixplan"><span className="label">Claude’s proposed fix</span><${C.Md} src=${item.fixPlan} /></div>` : null}
         ${item.proposedDiff ? html`<div className="sketch"><span className="label">Claude’s sketch — not yet applied</span><${C.Diff} text=${item.proposedDiff} /></div>` : null}
         <${C.Seg} name=${'seg-' + key} value=${dec.action} options=${SEG_OPTS} onChange=${props.onAction} />
-        <textarea data-guidance=${key} value=${dec.guidance}
+        <textarea data-guidance=${key} value=${dec.guidance} aria-label="Guidance for Claude"
           placeholder="Optional guidance for Claude (how to fix, what to say…)"
           onChange=${function (e) { props.onGuidance(e.target.value); }} />
         <div className="assignee"><label>Assign</label>
-          <input list="prr-assignees" data-assignee=${key} value=${dec.assignee} placeholder="teammate (optional)"
+          <input list="prr-assignees" data-assignee=${key} value=${dec.assignee} placeholder="teammate (optional)" aria-label="Assign to teammate"
             onChange=${function (e) { props.onAssignee(e.target.value); }} /></div>
       </div>
     </div>`;
@@ -93,6 +93,14 @@
     const [chip, setChip] = useState('all');
     const [locked, setLocked] = useState(false);
     const [lockMsg, setLockMsg] = useState('');
+    // transient toolbar confirmation for the batch buttons; { text, muted }
+    const [batchMsg, setBatchMsg] = useState(null);
+    const batchTimer = useRef(null);
+    const flashBatch = useCallback(function (text, muted) {
+      setBatchMsg({ text: text, muted: !!muted });
+      clearTimeout(batchTimer.current);
+      batchTimer.current = setTimeout(function () { setBatchMsg(null); }, 2800);
+    }, []);
 
     const ring = PRR.useFocusRing();
     const filterRef = useRef(null);
@@ -200,18 +208,24 @@
     function cancel() { setLocked(true); setLockMsg('Cancelling…'); PRR.api.post('triage/cancel').catch(function () {}); }
 
     function acceptSuggestions() {
+      const counts = { fix: 0, reply: 0, skip: 0 };
+      allItems.forEach(function (it) { const a = defaultAction(it.item, snapshot); counts[a] = (counts[a] || 0) + 1; });
       setDecisions(function (prev) {
         const n = Object.assign({}, prev);
         allItems.forEach(function (it) { n[it.key] = Object.assign({}, n[it.key], { action: defaultAction(it.item, snapshot) }); });
         return n;
       });
+      const parts = ['fix', 'reply', 'skip'].filter(function (a) { return counts[a]; }).map(function (a) { return counts[a] + ' ' + a; });
+      flashBatch('✓ Reset to Claude’s suggestions · ' + (parts.join(' · ') || 'nothing to apply'));
     }
     function skipOutdated() {
+      const n = allItems.filter(function (it) { return it.kind === 'review' && it.item.isOutdated; }).length;
       setDecisions(function (prev) {
-        const n = Object.assign({}, prev);
-        allItems.forEach(function (it) { if (it.kind === 'review' && it.item.isOutdated) n[it.key] = Object.assign({}, n[it.key], { action: 'skip' }); });
-        return n;
+        const next = Object.assign({}, prev);
+        allItems.forEach(function (it) { if (it.kind === 'review' && it.item.isOutdated) next[it.key] = Object.assign({}, next[it.key], { action: 'skip' }); });
+        return next;
       });
+      flashBatch(n ? '✓ Skipped ' + PRR.plural(n, 'outdated thread') : 'No outdated threads to skip', !n);
     }
     function batchSet(action) {
       setDecisions(function (prev) {
@@ -277,7 +291,7 @@
 
     const toolbar = html`<div className="toolbar">
       <div className="row">
-        <input className="filter" id="filter" ref=${filterRef} placeholder="Filter by file, author, text…  ( / )" value=${q} onChange=${function (e) { setQ(e.target.value); }} />
+        <input className="filter" id="filter" ref=${filterRef} aria-label="Filter comments by file, author, or text" placeholder="Filter by file, author, text…  ( / )" value=${q} onChange=${function (e) { setQ(e.target.value); }} />
         ${FILTER_CHIPS.map(function (c) {
           return html`<span key=${c[0]} className=${'chip' + (chip === c[0] ? ' active' : '')} data-chip=${c[0]} onClick=${function () { setChip(c[0]); }}>${c[1]}</span>`;
         })}
@@ -286,6 +300,7 @@
       <div className="row">
         <button className="small" id="batch-suggest" onClick=${acceptSuggestions}>Accept all suggestions</button>
         <button className="small" id="batch-skip-outdated" onClick=${skipOutdated}>Skip all outdated</button>
+        ${batchMsg ? html`<span className=${'batch-status' + (batchMsg.muted ? ' muted' : '')} role="status">${batchMsg.text}</span>` : null}
         <span className="footer-note">set filtered to:</span>
         <button className="small" data-batch="fix" onClick=${function () { batchSet('fix'); }}>Fix</button>
         <button className="small" data-batch="reply" onClick=${function () { batchSet('reply'); }}>Reply</button>

@@ -38,11 +38,21 @@
   };
 
   // ---------- comments ----------
+  // A comment renders as a conversation row: a tinted, per-author avatar in a
+  // left rail, then the author / time meta and the markdown body. Consecutive
+  // comments are divided by a hairline (see .comment + .comment in ui.css) so a
+  // multi-comment thread reads as a thread, not one undifferentiated block.
   C.Comment = function (props) {
     const c = props.c;
+    const author = c.author || 'unknown';
+    const initial = (author.replace(/^@/, '').charAt(0) || '?').toUpperCase();
+    const rc = 'var(--reviewer-' + PRR.reviewerColor(author) + ')';
     return html`<div className="comment">
-      <div className="meta"><b>${c.author}</b><${C.StateBadge} snapshot=${props.snapshot} author=${c.author} /><span>· ${PRR.relTime(c.createdAt)}</span></div>
-      <${C.Md} src=${c.body} />
+      <div className="avatar" aria-hidden="true" style=${{ '--rc': rc }}>${initial}</div>
+      <div className="comment-main">
+        <div className="meta"><b>${author}</b><${C.StateBadge} snapshot=${props.snapshot} author=${author} /><span className="time">${PRR.relTime(c.createdAt)}</span></div>
+        <${C.Md} src=${c.body} />
+      </div>
     </div>`;
   };
   C.Comments = function (props) {
