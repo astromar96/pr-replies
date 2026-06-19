@@ -1,6 +1,6 @@
 {
   "name": "pr-replies",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Triage, fix, and reply to GitHub PR / GitLab MR review comments from a local browser UI — pick from dual reply drafts (direct + humanized), with history and reply templates",
   "author": {
     "name": "astromar96"
