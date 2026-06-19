@@ -1,54 +1,128 @@
+<div align="center">
+
 # pr-replies
 
-A [Claude Code](https://code.claude.com) plugin that turns **GitHub PR** and
-**GitLab MR** review feedback into **one live browser session** instead of
-terminal back-and-forth:
+**Turn GitHub PR & GitLab MR review feedback into one live, keyboard-first browser session — triage, fix, and reply, without the terminal back-and-forth.**
 
-1. **Triage** — Claude fetches the PR/MR's unresolved review threads (GitHub) or
-   MR discussions (GitLab) and general comments, reads your code, and proposes a
-   per-comment plan (with a confidence badge and, for high-confidence fixes, a
-   sketched diff). Suggestions are informed by this repo's history — what past
-   feedback you fixed vs replied to. In the browser you choose
-   **Fix / Reply only / Skip** per comment — keyboard-first (`j`/`k`, `1`/`2`/`3`,
-   `⌘↩`), with filtering, batch actions, and file grouping for big PRs.
-2. **Fix (live)** — the same tab switches to a progress view while Claude
-   implements the approved fixes: per-fix status, test checks, commit SHAs and
-   the push, streamed in real time. An **Abort** button hands control back at
-   any point.
-3. **Reply** — the tab switches to Claude's drafts. For each comment Claude
-   writes **two reply variants** — a **Direct / fix-plan** draft ("I'll apply
-   the fix by …") and a warmer **Humanized** draft — shown side by side; pick
-   one (`v` toggles), then tweak it. Each card also shows the **actual fix
-   commit diff** (read from git, not from Claude's memory), a markdown preview
-   toggle, and a **Resolve thread** checkbox. Hit Send — the local server posts
-   via `gh`/`glab` with rate-limit retries, resolves the threads you ticked, and
-   streams per-item status back to the page. Partial failures stay on screen
-   with **Retry failed / Finish anyway**.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
+![GitHub + GitLab](https://img.shields.io/badge/GitHub%20%2B%20GitLab-supported-2da44e)
+![Node 18+](https://img.shields.io/badge/node-18%2B-339933)
+![Zero build · zero deps](https://img.shields.io/badge/build-none-lightgrey)
 
-Everything runs locally on `127.0.0.1` behind a random URL token. The only
-network calls are the `gh`/`glab` CLI talking to GitHub/GitLab with your
-existing auth — **the tool never handles tokens**; authentication is delegated
-entirely to whichever CLI your repo uses. Your edits survive refreshes,
-timeouts, and even a server restart (localStorage keyed by repo + PR, and a
-resumable on-disk session).
+</div>
 
-The whole session lives inside an **app shell** with a persistent nav
-(**Active PR · History · Templates**), a **light / dark / system** theme toggle,
-and keyboard-first navigation throughout (`g h` / `g t` / `g p` jump between
-routes). Triage and reply can be **grouped by file or by reviewer**, and each
-comment can be tagged with a teammate to handle — see
-[The hub](#the-hub--history--templates) below.
+A [Claude Code](https://code.claude.com) plugin. Point it at an open **GitHub pull
+request** or **GitLab merge request** and it opens a **single browser tab** that
+walks you through the whole loop: triage every comment, watch Claude implement
+the approved fixes live, then pick and edit replies and post them.
+
+Everything runs locally on `127.0.0.1` behind a random URL token. The only network
+calls are the `gh` / `glab` CLI talking to GitHub/GitLab with the auth you already
+have — **the tool never sees, handles, or stores a token.**
+
+![Triage view](docs/screenshots/triage.png)
+
+## Highlights
+
+- **One browser session for the whole loop** — triage → fix → reply, in a single tab.
+- **AI triage you stay in control of** — Claude proposes a per-comment plan with a **confidence badge** and, for high-confidence fixes, a **sketched diff**. You pick **Fix / Reply only / Skip**, informed by your repo's history of what you've fixed vs. replied to.
+- **Live fix progress** — per-fix status, test checks, commit SHAs, and the push, streamed in real time, with an **Abort** at any point.
+- **Dual reply drafts** — a **Direct / fix-plan** and a warmer **Humanized** draft, side by side; pick one and tweak it.
+- **Real diffs, not hallucinations** — each reply shows the **actual fix commit diff read from git**, not from Claude's memory.
+- **Keyboard-first** — `j`/`k`, `1`/`2`/`3`, `⌘↩`, with filtering, batch actions, and file/reviewer grouping for big PRs.
+- **Team-friendly, still local** — assign comments to teammates, optional @-mentions, a **History** audit log, and reusable **reply templates**.
+- **Light / dark / system** theme, and edits that survive refreshes, timeouts, and even a server restart.
+- **GitHub + GitLab** (incl. self-managed), auto-detected from your git remote.
+- **Zero build, zero runtime dependencies** — the React UI ships as vendored static files, served unbundled.
+
+## The three phases
+
+### 1 · Triage
+
+Claude fetches the unresolved review threads / MR discussions plus general
+comments, reads your code, and proposes a plan per comment — each with a
+**confidence badge** and, for high-confidence fixes, a **sketched diff** (marked
+*not yet applied*). Choose **Fix / Reply only / Skip**, filter, run batch actions,
+and **group by file or reviewer**.
+
+![Triage view](docs/screenshots/triage.png)
+
+It's keyboard-first throughout — press `?` for the shortcut sheet, or group by
+reviewer to route comments to teammates:
+
+<table>
+<tr>
+<td><img alt="Keyboard shortcuts" src="docs/screenshots/triage-shortcuts.png"></td>
+<td><img alt="Grouped by reviewer" src="docs/screenshots/triage-by-reviewer.png"></td>
+</tr>
+</table>
+
+### 2 · Fix (live)
+
+The same tab switches to a progress view while Claude implements the approved
+fixes: per-fix status, test checks, commit SHAs, and the push, **streamed live**.
+**Abort** hands control back at any point — keep the tab open; replies come next.
+
+![Live fix progress](docs/screenshots/fixing.png)
+
+### 3 · Reply
+
+Claude writes **two variants per comment** — a **Direct / fix-plan** draft and a
+warmer **Humanized** one — shown side by side. Pick one (`v` toggles), tweak it,
+and review the **actual fix commit diff** (read from git) with a markdown-preview
+toggle and a **Resolve thread** checkbox.
+
+![Reply drafts — direct vs. humanized](docs/screenshots/reply.png)
+
+Hit **Send** — the server posts via `gh` / `glab` with rate-limit retries,
+resolves the threads you ticked, and streams per-item status back. Partial
+failures stay on screen with **Retry failed / Finish anyway**.
+
+![Humanized variant selected](docs/screenshots/reply-humanized.png)
+
+### Done
+
+A summary of what was posted, resolved, and fixed — then back to your Claude
+session for the recap.
+
+![Done summary](docs/screenshots/done.png)
+
+## The hub — History & Templates
+
+These make pr-replies feel like a team tool while staying **local** — each
+developer runs it on their own machine with their own `gh`/`glab` auth. No hosted
+server, no accounts. Open it with `/pr-dashboard` (no PR needed).
+
+**History** — an audit log of every finished session (what was posted, resolved,
+and fixed, with commit SHAs and timestamps), written automatically.
+
+![History](docs/screenshots/history.png)
+
+**Templates** — reusable reply snippets. Press `t` while drafting to insert one,
+with `{{author}}`, `{{sha}}`, `{{path}}`, `{{pr}}`, `{{repo}}`, and `{{line}}`
+filled in. Yours live in `~/.config/pr-replies/templates.json`; a repo can ship
+shared read-only templates in `.pr-replies/templates.json` (merged in, user wins).
+
+![Reply templates](docs/screenshots/templates.png)
+
+**Reviewer routing** — group triage/reply by reviewer, assign a comment to a
+teammate, and optionally @-mention them in the reply (an advisory label + opt-in
+mention, not a GitHub assignment API call).
+
+A **light / dark / system** theme toggle persists per browser:
+
+![Dark theme](docs/screenshots/history-dark.png)
 
 ## Requirements
 
-- For GitHub: [GitHub CLI](https://cli.github.com) (`gh`) installed and authenticated (`gh auth login`)
-- For GitLab: [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) installed and authenticated (`glab auth login`; for a self-managed instance, `glab auth login --hostname your.gitlab.host`)
-- Node.js 18+ (no install, no build step — the React UI ships as vendored static files and is served unbundled)
-- macOS, Linux, or Windows (browser launch uses `open` / `xdg-open` / `start`)
+- **GitHub:** [`gh`](https://cli.github.com) installed and authenticated (`gh auth login`)
+- **GitLab:** [`glab`](https://gitlab.com/gitlab-org/cli) installed and authenticated (`glab auth login`; self-managed: `--hostname your.gitlab.host`)
+- **Node.js 18+** — no install, no build step
+- **macOS, Linux, or Windows** — browser launch uses `open` / `xdg-open` / `start`
 
-The provider is **auto-detected** from your git remote (github.com → GitHub,
-gitlab.com or any self-managed `gitlab.*` host → GitLab); override with
-`--provider` / `--host` when it can't be inferred.
+The provider is **auto-detected** from your git remote (github.com → GitHub;
+gitlab.com or any `gitlab.*` host → GitLab); override with `--provider` / `--host`.
 
 ## Install
 
@@ -57,7 +131,7 @@ gitlab.com or any self-managed `gitlab.*` host → GitLab); override with
 /plugin install pr-replies@pr-replies
 ```
 
-## Use
+## Usage
 
 In any repo with an open PR (GitHub) or MR (GitLab):
 
@@ -71,41 +145,31 @@ In any repo with an open PR (GitHub) or MR (GitLab):
 /pr-replies --allow-cross-repo    # allow fixes on a fork PR you have checked out
 /pr-replies --provider gitlab     # force the provider (else auto-detected)
 /pr-replies --host gitlab.example.com   # self-managed GitLab host
+
+/pr-dashboard                     # open the hub (history + templates), no PR needed
 ```
 
 Only **unresolved** threads/discussions are shown. Comments you authored and bot
 comments are filtered out of the general-comments list.
 
-## The hub — history & templates
+## Keyboard shortcuts
 
-These features make pr-replies feel like a team tool while staying **local —
-each developer runs it on their own machine with their own `gh`/`glab` auth**.
-There is no hosted server and no accounts.
+Keyboard-first — press `?` in any view for the full, in-context sheet. The common ones:
 
-Open the hub (no PR needed) to browse across sessions:
+| Key | Action |
+| --- | --- |
+| `j` / `k` | Next / previous comment |
+| `1` / `2` / `3` | Set **Fix** / **Reply** / **Skip** |
+| `v` | Switch reply variant (Direct ↔ Humanized) |
+| `e` | Edit guidance / draft |
+| `t` | Insert a template |
+| `o` | Toggle the diff |
+| `/` | Filter comments |
+| `⌘↩` | Continue / send |
+| `g h` / `g t` / `g p` | Jump to **History** / **Templates** / active **PR** |
+| `?` | Toggle this help |
 
-```
-/pr-dashboard                            # the recommended way — opens the hub in your browser
-node server/server.js serve --home       # or run it directly (npm run home)
-```
-
-- **History** — an audit log of every finished session (what was posted,
-  resolved, and fixed, with commit SHAs and timestamps). Written automatically at
-  the end of each session; nothing to enable. The hub lands here.
-- **Templates** — reusable reply snippets. Press `t` while drafting a reply (or
-  triage guidance) to insert one, with `{{author}}`, `{{sha}}`, `{{path}}`,
-  `{{pr}}`, `{{repo}}`, and `{{line}}` filled in. Your templates live in
-  `~/.config/pr-replies/templates.json`; a repo can also ship read-only shared
-  templates in `.pr-replies/templates.json` (merged in, user wins on conflicts).
-- **Reviewer routing** — group triage/reply by reviewer (with their review
-  state), assign a comment to a teammate, and optionally @-mention them in the
-  posted reply. Assignment is an advisory label + opt-in mention, not a GitHub
-  assignment API call.
-
-Local files the hub reads and writes (all under `~/.config/pr-replies/`):
-`templates.json`, `history/<session>.json`, and `home.json` (the running hub's
-address). Set `PR_REPLIES_CONFIG_DIR` to point all of these elsewhere — the test
-suite and UI preview use it so they never touch your real files.
+Shortcuts are ignored while a text field is focused, by design.
 
 ## Configuration (optional)
 
@@ -123,13 +187,23 @@ suite and UI preview use it so they never touch your real files.
 }
 ```
 
-- `signature` — appended to every posted reply (server-side; the UI shows a note).
-- `defaultTriageAction` — preselected action when Claude has no suggestion (`"fix"`, `"reply"`, `"skip"`).
+- `signature` — appended to every posted reply (the UI shows a note).
+- `defaultTriageAction` — preselected action when Claude has no suggestion (`"fix"` / `"reply"` / `"skip"`).
 - `autoResolveFixedThreads` — pre-tick "Resolve thread" on fixed threads you can resolve.
 - `sessionTimeoutMins` — how long the background session server lives without finishing.
 - `waitTimeoutSecs` — default window for each blocking `wait` call.
-- `historyMax` — how many session records to keep in `history/` (oldest pruned; cap 2000).
-- `theme` — `"light"`, `"dark"`, or `"system"`. The in-browser toggle overrides this per browser.
+- `historyMax` — how many session records to keep (oldest pruned; cap 2000).
+- `theme` — `"light"` / `"dark"` / `"system"`; the in-browser toggle overrides this per browser.
+
+Set `PR_REPLIES_CONFIG_DIR` to relocate config, history, and templates (the test
+suite and UI preview use it so they never touch your real files).
+
+## Privacy & security
+
+- **Local only** — served from `127.0.0.1` behind a random per-session URL token. No hosted server, no accounts, no telemetry.
+- **Never handles tokens** — auth is delegated entirely to your `gh` / `glab` CLI and their existing credentials.
+- **No payload in the HTML** — the browser fetches state over `GET /state` and `GET /events` (SSE).
+- **Durable edits** — survive refreshes, timeouts, and a server restart (localStorage keyed by repo + PR, plus a resumable on-disk session).
 
 ## How it works
 
@@ -145,83 +219,51 @@ wait --phase reply   (blocks)        posts via gh/glab (retry+resolve) ▶  per-
 stop --session DIR
 ```
 
-- `commands/pr-replies.md` instructs Claude through the flow (Step 0 detects the
-  provider; later steps branch between `gh` and `glab`). `commands/pr-dashboard.md`
-  is a thin launcher for the hub.
-- Provider backends live in `server/lib/providers/` behind a small factory
-  (`createProvider`): `github.js` (`gh`) and `gitlab.js` (`glab`, REST-only)
-  share a retry kernel and expose the same interface
-  (`postReviewReply` / `postIssueComment` / `resolveThread` / `listPrs`). The rest
-  of the server is provider-agnostic; `server/lib/github.js` remains as a
-  back-compat shim.
-- `server/server.js` is a CLI (`serve` / `wait` / `emit` / `advance` / `stop`,
-  plus the read-only `suggest` helper) over zero-dependency libs
-  in `server/lib/`. The session
-  state machine (`triage → fixing → reply → done|cancelled`) persists
-  everything in a session dir under `/tmp/pr-replies/`; all JSON is written
-  atomically and `events.jsonl` doubles as the SSE replay log, so a refresh or
-  reconnect never loses state.
-- `serve --home` is the same server with no session: it skips the state machine
-  and exposes only a read-only data plane (`GET /{token}/data/*`) backed by
-  `server/lib/{dataPlane,store,history}.js` — live sessions, history, and
-  templates, all read from local JSON. Phase routes 404 in this mode.
-- `server/ui/` is a **React single page with no build step**. The vendored
-  React + [htm](https://github.com/developit/htm) UMD bundles
-  (`server/ui/vendor/`) and the app modules (`server/ui/app/`) are concatenated
-  into one inline `<script>` at serve time — htm parses the JSX-free
-  tagged-template markup at runtime, so there is nothing to compile or install.
-  The app boots from `GET /state` and listens on `GET /events` (SSE); external
-  stores (`app/stores.js`) bridge that state into React via
-  `useSyncExternalStore`. A hash router in `app/App.js` layers the History /
-  Templates routes over the per-PR phase views (`app/views/`). No payload is
-  ever injected into the HTML.
-- On **GitHub**, inline replies land **inside the review thread** (GraphQL
-  `addPullRequestReviewThreadReply`, REST fallback), general comments post as
-  new top-level PR comments, and ticked threads are resolved with
-  `resolveReviewThread`. On **GitLab** the same operations map to MR discussion
-  replies, top-level MR notes, and resolving a discussion (REST `PUT …?resolved=true`).
-  Resolve failures are non-fatal and reported either way.
+- **The skill drives the flow.** `commands/pr-replies.md` walks Claude through each step (Step 0 detects the provider; later steps branch between `gh` and `glab`); `commands/pr-dashboard.md` launches the hub.
+- **Provider-agnostic core.** Backends in `server/lib/providers/` sit behind a `createProvider` factory — `github.js` (`gh`) and `gitlab.js` (`glab`, REST-only) share a retry kernel and expose one interface (`postReviewReply` / `postIssueComment` / `resolveThread` / `listPrs`).
+- **Zero-dependency server.** `server/server.js` is a CLI (`serve` / `wait` / `emit` / `advance` / `stop`, plus a read-only `suggest`) over stdlib libs. A session state machine (`triage → fixing → reply → done|cancelled`) persists everything atomically under `/tmp/pr-replies/`; `events.jsonl` doubles as the SSE replay log, so a refresh never loses state. `serve --home` is the same server with no session — a read-only data plane for history and templates.
+- **No build step.** `server/ui/` is a React single page: vendored React + [htm](https://github.com/developit/htm) and the app modules are concatenated into one inline `<script>` at serve time, so there's nothing to compile or install.
+- **Where replies land.** On GitHub, inline replies go **inside the review thread** (GraphQL `addPullRequestReviewThreadReply`, REST fallback), general comments become new top-level PR comments, and ticked threads resolve via `resolveReviewThread`. On GitLab the same maps to MR discussion replies, top-level notes, and resolving a discussion. Resolve failures are non-fatal.
 
 ## Timeouts & resume
 
-Each `wait` call blocks for up to 9 minutes (under Claude Code's 10-minute
-Bash limit), but **the session does not end with it** — Claude simply re-runs
-`wait` and the tab is untouched. The background server itself lives for
-`sessionTimeoutMins` (default 2 h). If the server dies, Claude relaunches it
-with `serve --resume`: state is rebuilt from the session dir (already-posted
-replies stay locked), the browser reopens, and your in-browser edits are
-restored from localStorage.
+Each `wait` blocks for up to 9 minutes (under Claude Code's 10-minute Bash limit),
+but the session doesn't end with it — Claude just re-runs `wait`, untouched. The
+server itself lives for `sessionTimeoutMins` (default 2 h); if it dies, Claude
+relaunches with `serve --resume`, rebuilding state from the session dir (posted
+replies stay locked) and restoring your in-browser edits from localStorage.
 
 ## Development
 
 ```
 git clone https://github.com/astromar96/pr-replies
 claude --plugin-dir ./pr-replies
+
+npm test          # Node's built-in runner (no network needed)
 ```
 
-Run the test suite (Node's built-in runner):
-
-```
-npm test          # = node --test test/
-```
-
-Drive the full session UI without GitHub or Claude:
+Drive the full UI without GitHub or Claude:
 
 ```
 scripts/demo.sh              # triage → scripted fix progress → dry-run replies
 scripts/demo.sh reply-only   # the --no-fix fast path
 scripts/demo.sh home         # the history / templates hub
+
+npm run ui:preview           # boot the real server + drive every route with Playwright
 ```
 
-`npm run ui:preview` boots the real server (session **and** hub) and drives the
-whole UI with Playwright, screenshotting every route into `test/ui/screenshots/`.
-Because the entire React bundle is concatenated and served, it doubles as an
-integration test: any load-order, render, or `ReferenceError` regression makes a
-route throw (a page error the harness fails on).
+`ui:preview` screenshots every route into the gitignored `test/ui/screenshots/`
+and doubles as an integration test — any load-order / render / `ReferenceError`
+regression makes a route throw and fails the run. The README images in
+`docs/screenshots/` are a curated subset of that output.
 
-To exercise crash recovery: kill the `serve` pid mid-triage, then
-`node server/server.js serve --session <dir> --resume`.
+## Contributing
+
+Issues and PRs welcome. The codebase is intentionally dependency-free (stdlib
+only; Playwright is the sole dev dependency), so please run `npm test` and
+`npm run ui:preview` before opening a PR.
 
 ## License
 
-MIT
+[MIT](LICENSE)
+</content>
