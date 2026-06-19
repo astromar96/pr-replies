@@ -261,6 +261,14 @@ input.filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .toolbar .spacer { flex: 1; }
 .match-count { color: var(--text-3); font-size: 12.5px; }
+/* transient confirmation for the batch buttons (lives in the sticky toolbar so
+   it's always in view, unlike a top-of-page banner) */
+.batch-status {
+  font-size: 12.5px; font-weight: 600; color: var(--ok);
+  background: var(--ok-soft); border-radius: 999px; padding: 3px 11px;
+  animation: slide-in .18s ease; white-space: nowrap;
+}
+.batch-status.muted { color: var(--text-2); background: var(--surface-2); }
 
 /* file groups */
 .file-head {
@@ -277,18 +285,19 @@ input.filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .card {
   background: var(--surface-1);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  margin-bottom: 14px;
+  border-radius: 12px;
+  margin-bottom: 18px;
   overflow: hidden;
   box-shadow: var(--shadow);
-  transition: box-shadow .15s ease, border-color .15s ease, opacity .15s ease;
+  transition: box-shadow .15s ease, border-color .15s ease, transform .12s ease, opacity .15s ease;
 }
+.card:hover { box-shadow: var(--shadow-lift); }
 .card.focused { border-color: var(--accent); box-shadow: var(--shadow-lift), 0 0 0 1px var(--accent); }
 .card.hidden { display: none; }
 .card.skipped-dim { opacity: .55; }
 .card-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 9px 14px;
+  padding: 11px 16px;
   border-bottom: 1px solid var(--line);
 }
 .badge {
@@ -309,7 +318,7 @@ input.filter:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 /* diffs */
 details.hunk { border-bottom: 1px solid var(--line); }
 details.hunk summary {
-  cursor: pointer; padding: 6px 14px; color: var(--text-3); font-size: 12px;
+  cursor: pointer; padding: 8px 16px; color: var(--text-3); font-size: 12px;
   user-select: none;
 }
 details.hunk summary:hover { color: var(--text-2); }
@@ -319,19 +328,34 @@ pre.diff {
   overflow-x: auto;
   font: 12px/1.5 var(--mono);
 }
-pre.diff span { display: block; padding: 0 14px; white-space: pre; }
+pre.diff span { display: block; padding: 0 16px; white-space: pre; }
 pre.diff .add { background: var(--diff-add); }
 pre.diff .del { background: var(--diff-del); }
 pre.diff .hd { background: var(--diff-head); color: var(--text-2); }
 
-/* comments */
-.comment { padding: 10px 14px; border-bottom: 1px solid var(--line); }
-.comment .meta { font-size: 12px; color: var(--text-3); margin-bottom: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.comment .meta b { color: var(--text-1); }
+/* comments — a threaded conversation, not a wall of text. Each comment is a
+   row with a per-author avatar rail; consecutive comments get a hairline
+   divider, and the comment block is fenced off from the controls below it. */
+.comment { display: flex; gap: 12px; padding: 14px 16px; }
+.comment + .comment { border-top: 1px solid var(--line); }
+.comment + .controls { border-top: 1px solid var(--line); }
+.comment .avatar {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; margin-top: 1px;
+  font: 650 12.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: var(--rc, var(--accent));
+  background: color-mix(in srgb, var(--rc, var(--accent)) 15%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--rc, var(--accent)) 34%, transparent);
+  user-select: none;
+}
+.comment .comment-main { flex: 1; min-width: 0; }
+.comment .meta { font-size: 12px; color: var(--text-3); margin-bottom: 5px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.comment .meta b { color: var(--text-1); font-size: 13px; font-weight: 650; }
+.comment .meta .time { color: var(--text-3); }
+.comment .meta .time::before { content: '·'; margin-right: 6px; color: var(--line); }
 details.thread { border-bottom: 1px solid var(--line); }
-details.thread summary { cursor: pointer; padding: 8px 14px; color: var(--text-3); font-size: 12px; user-select: none; }
+details.thread summary { cursor: pointer; padding: 9px 16px; color: var(--text-3); font-size: 12px; user-select: none; }
 details.thread summary:hover { color: var(--text-2); }
-details.thread .comment:last-child { border-bottom: none; }
 
 /* markdown bodies */
 .md { word-break: break-word; }
@@ -344,7 +368,7 @@ details.thread .comment:last-child { border-bottom: none; }
 .md ul, .md ol { margin: 0 0 8px; padding-left: 22px; }
 
 /* controls */
-.controls { padding: 12px 14px; }
+.controls { padding: 14px 16px; }
 .fixplan {
   border: 1px dashed var(--line); border-radius: 8px;
   padding: 9px 12px; margin-bottom: 10px; font-size: 13px;
@@ -420,7 +444,7 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .resolve-row.disabled { opacity: .5; }
 
 /* posting status */
-.status-line { padding: 9px 14px; border-top: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+.status-line { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: center; }
 .status-line.posting, .status-line.retrying { background: var(--surface-0); color: var(--text-2); }
 .status-line.posted { background: var(--ok-soft); color: var(--ok); }
 .status-line.failed { background: var(--danger-soft); color: var(--danger); white-space: pre-wrap; word-break: break-word; }

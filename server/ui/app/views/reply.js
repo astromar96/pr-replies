@@ -61,7 +61,7 @@
         <button className=${props.previewOn ? '' : 'active'} data-tab="edit" data-key=${key} onClick=${function () { props.onTab(false); }}>Edit</button>
         <button className=${props.previewOn ? 'active' : ''} data-tab="preview" data-key=${key} onClick=${function () { props.onTab(true); }}>Preview</button>
       </div>
-      <textarea data-text=${key} value=${props.draft} hidden=${props.previewOn} disabled=${props.locked} placeholder="Reply…"
+      <textarea data-text=${key} value=${props.draft} hidden=${props.previewOn} disabled=${props.locked} placeholder="Reply…" aria-label="Reply draft"
         onChange=${function (e) { props.onDraft(e.target.value); }} />
       <div className="preview" data-preview=${key} hidden=${!props.previewOn}
         dangerouslySetInnerHTML=${{ __html: props.draft ? PRR.renderMarkdown(props.draft) : '<span class="empty">nothing to preview</span>' }} />
@@ -98,7 +98,7 @@
   function AssigneeMention(props) {
     const key = props.itemKey;
     return html`<div className="assignee"><label>Assign</label>
-      <input list="prr-assignees" data-assignee=${key} value=${props.assignee} disabled=${props.locked} placeholder="teammate (optional)"
+      <input list="prr-assignees" data-assignee=${key} value=${props.assignee} disabled=${props.locked} placeholder="teammate (optional)" aria-label="Assign to teammate"
         onChange=${function (e) { props.onAssignee(e.target.value); }} />
       <label className="mention-label"><input type="checkbox" data-mention=${key} checked=${props.mention} disabled=${props.locked}
         onChange=${function (e) { props.onMention(e.target.checked); }} /> mention @ in reply</label>
