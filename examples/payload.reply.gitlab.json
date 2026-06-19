@@ -1,14 +1,16 @@
 {
   "version": 2,
+  "provider": "gitlab",
   "repo": {
-    "owner": "astromar96",
+    "owner": "acme-group",
     "name": "demo-repo",
-    "nameWithOwner": "astromar96/demo-repo"
+    "nameWithOwner": "acme-group/demo-repo",
+    "host": "gitlab.com"
   },
   "pr": {
     "number": 42,
     "title": "Add caching layer",
-    "url": "https://github.com/astromar96/demo-repo/pull/42",
+    "url": "https://gitlab.com/acme-group/demo-repo/-/merge_requests/42",
     "author": "astromar96",
     "headRefName": "feat/cache",
     "reviewers": [
@@ -19,14 +21,14 @@
   "generatedAt": "2026-06-12T12:30:00Z",
   "reviewThreads": [
     {
-      "id": "PRRT_kwDOExample001",
+      "id": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
       "isOutdated": false,
       "viewerCanResolve": true,
       "path": "src/cache.js",
       "startLine": null,
       "line": 120,
       "diffHunk": "@@ -115,6 +115,9 @@ function get(key) {\n   const entry = store.get(key);\n+  if (entry.expiresAt > Date.now()) {\n+    return entry.value;\n+  }\n   return undefined;",
-      "replyToDatabaseId": 1234567890,
+      "replyToDatabaseId": 987654321,
       "comments": [
         {
           "author": "reviewer1",
@@ -38,35 +40,14 @@
       "resolveDefault": true,
       "draft": "Fixed in `abc1234` — `get()` now returns early on a cache miss instead of dereferencing `entry`.",
       "draftHumanized": "Good catch! You're right that a cache miss would have thrown there. I added an early return so `get()` bails out cleanly when `entry` is undefined — it's in `abc1234`."
-    },
-    {
-      "id": "PRRT_kwDOExample002",
-      "isOutdated": true,
-      "viewerCanResolve": false,
-      "path": "src/index.js",
-      "startLine": 10,
-      "line": 14,
-      "diffHunk": "@@ -8,7 +8,11 @@\n const config = loadConfig();\n+const cache = createCache(config.cache);\n",
-      "replyToDatabaseId": 1234567891,
-      "comments": [
-        {
-          "author": "reviewer1",
-          "createdAt": "2026-06-11T09:30:00Z",
-          "body": "Is the cache size configurable? I don't see it documented."
-        }
-      ],
-      "fixedIn": null,
-      "resolveDefault": false,
-      "draft": "Yes — `cache.maxEntries` in the config (defaults to 1000, see `src/config.js:22`). I'll add it to the README in a follow-up if you'd like.",
-      "draftHumanized": "It is configurable — `cache.maxEntries` controls it and defaults to 1000 (`src/config.js:22`). It just isn't documented yet; happy to add a note to the README in a follow-up if that helps."
     }
   ],
   "issueComments": [
     {
-      "databaseId": 333222111,
+      "databaseId": 555444333,
       "author": "reviewer2",
       "createdAt": "2026-06-11T11:00:00Z",
-      "url": "https://github.com/astromar96/demo-repo/pull/42#issuecomment-333222111",
+      "url": "https://gitlab.com/acme-group/demo-repo/-/merge_requests/42#note_555444333",
       "body": "Can you also update the changelog before merging?",
       "fixedIn": "def5678",
       "draft": "> Can you also update the changelog before merging?\n\n@reviewer2 done in `def5678` — added the caching layer under Unreleased.",

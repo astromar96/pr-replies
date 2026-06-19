@@ -1,17 +1,25 @@
 ---
-description: Triage, fix, and reply to GitHub PR comments in a live browser session
-argument-hint: "[pr-number-or-url] [--no-fix] [--allow-cross-repo] [--dry-run]"
-allowed-tools: Bash(gh:*), Bash(git:*), Bash(node:*), Bash(rm:*), Bash(date:*), Bash(mkdir:*), Bash(ls:*), Read, Grep, Glob, Edit, Write
+description: Triage, fix, and reply to GitHub PR or GitLab MR comments in a live browser session
+argument-hint: "[pr-or-mr-number-or-url] [--no-fix] [--allow-cross-repo] [--dry-run] [--provider github|gitlab] [--host HOST]"
+allowed-tools: Bash(gh:*), Bash(glab:*), Bash(git:*), Bash(node:*), Bash(rm:*), Bash(date:*), Bash(mkdir:*), Bash(ls:*), Read, Grep, Glob, Edit, Write
 ---
 
-# Reply to PR comments via a live browser session
+# Reply to PR/MR comments via a live browser session
 
-You will fetch this PR's unresolved feedback, then run ONE browser session that
-spans the whole flow: the user triages in the browser → you implement the
-approved fixes while the browser shows live progress → the user reviews and
-sends the replies from the same tab. Follow these steps exactly.
+You will fetch this PR's (GitHub) or MR's (GitLab) unresolved feedback, then run
+ONE browser session that spans the whole flow: the user triages in the browser →
+you implement the approved fixes while the browser shows live progress → the user
+reviews and sends the replies from the same tab. Follow these steps exactly.
 
-**Never post any comment to GitHub yourself with `gh`** — all posting happens
+This command works against **GitHub** (via the `gh` CLI) and **GitLab** (via the
+`glab` CLI). Authentication is delegated entirely to whichever CLI the repo uses —
+this tool never handles tokens. The provider is auto-detected from the git remote
+(Step 0) and threaded through every step; where a step differs, the GitHub and
+GitLab branches are shown explicitly. "Review thread" (GitHub) and "MR discussion"
+(GitLab) are the same provider-neutral concept; likewise "issue comment" / "MR
+note".
+
+**Never post any comment yourself with `gh`/`glab`** — all posting happens
 inside the session server during Step 10.
 
 The server runs in the **background** for the whole session
@@ -25,17 +33,40 @@ Arguments: "$ARGUMENTS"
 - `--allow-cross-repo`: allow fixes for a fork PR when the local checkout IS
   that fork (see Step 2).
 - `--dry-run`: pass `--no-post` to the server; everything works but nothing is
-  posted to GitHub.
+  posted.
+- `--provider github|gitlab`: force the provider instead of auto-detecting.
+- `--host HOST`: the provider host for a self-managed instance (e.g.
+  `gitlab.example.com`); auto-detected from the remote when omitted.
+
+## Step 0 — Detect the provider
+
+Determine PROVIDER and HOST (used by every later step):
+1. If `--provider` is given, use it; if `--host` is given, use it.
+2. Otherwise read the remote: `git -C <repo> remote get-url origin`. Classify
+   the host — `github.com` (or any host containing `github`) → `github`;
+   `gitlab.com` (or any host containing `gitlab`) → `gitlab`. Set HOST to that
+   host. If the host matches neither, ask the user to pass `--provider`
+   (and `--host` for a self-managed instance) and stop.
+
+Everywhere below, run the `gh` branch when PROVIDER is `github` and the `glab`
+branch when it is `gitlab`. For GitLab, a self-managed HOST is passed to every
+`glab` call via the `GITLAB_HOST` environment variable
+(e.g. `GITLAB_HOST=$HOST glab …`).
 
 ## Step 1 — Preflight
 
-Run `gh auth status`. If it fails, tell the user to run `gh auth login` and stop.
+- **GitHub:** run `gh auth status`. If it fails, tell the user to run
+  `gh auth login` and stop.
+- **GitLab:** run `GITLAB_HOST=$HOST glab auth status`. If it fails, tell the
+  user to run `glab auth login` (for a self-managed host,
+  `glab auth login --hostname $HOST`) and stop.
 
-## Step 2 — Resolve the PR
+## Step 2 — Resolve the PR / MR
 
 Remove the known flags from the arguments; what remains (possibly nothing) is
-the PR argument.
+the PR/MR argument.
 
+**GitHub (PR):**
 - URL `https://github.com/OWNER/REPO/pull/N` → parse OWNER, REPO, N. If that
   repo is not the current directory's repo: with `--allow-cross-repo`, check
   `gh pr view N --repo OWNER/REPO --json headRepositoryOwner,headRepository,headRefName`
@@ -45,8 +76,22 @@ the PR argument.
 - Bare number → current repo (`gh repo view --json nameWithOwner`).
 - Empty → autodetect with `gh pr view --json number,title,url,headRefName,author`;
   if that fails, ask the user for a PR number or URL and stop.
+- Fetch the current user's login: `gh api user --jq .login` (call it SELF).
 
-Fetch the current user's login: `gh api user --jq .login` (call it SELF).
+**GitLab (MR):**
+- URL `https://HOST/GROUP/PROJECT/-/merge_requests/N` → parse the project path
+  `GROUP/PROJECT` (nested groups allowed) and the MR IID `N`.
+- Bare number → current project (`glab` infers it from the remote); read the
+  project path from the `origin` remote.
+- Empty → autodetect the MR for the current branch:
+  `GITLAB_HOST=$HOST glab mr view --output json` (or
+  `glab api "projects/<ENC>/merge_requests?source_branch=<BRANCH>&state=opened"`);
+  if none, ask the user for an MR number or URL and stop.
+- Fetch the current user: `GITLAB_HOST=$HOST glab api user --jq .username` (SELF).
+
+Record REPO (the `owner/name` or `group/project` path), the number (PR number /
+MR IID — call it N), and HOST. `<ENC>` below means REPO URL-encoded for the
+GitLab REST API (every `/` becomes `%2F`).
 
 **Resume check:** look for a live previous session:
 `ls -d /tmp/pr-replies/*-pr<N>-* 2>/dev/null`. If a dir exists, read its
@@ -60,9 +105,14 @@ Unless reply-only: confirm the working tree is on the PR's head branch
 Then `git status --porcelain` — if there are uncommitted changes, tell the user
 fixes need a clean tree and stop. Record the absolute repo path as REPO_DIR.
 
-## Step 3 — Fetch unresolved review threads
+## Step 3 — Fetch unresolved review threads / MR discussions
 
-Run via `gh api graphql -f query='...' -F owner=OWNER -F name=REPO -F number=N`,
+The goal is the same neutral list for either provider: each unresolved thread
+records `id`, `isOutdated`, `viewerCanResolve`, `path`, `startLine`, `line`,
+`replyToDatabaseId`, an optional `diffHunk`, and every comment's
+author/createdAt/body (author flattened to a login/username string).
+
+**GitHub** — run via `gh api graphql -f query='...' -F owner=OWNER -F name=REPO -F number=N`,
 repeating with `-F cursor=<endCursor>` while `hasNextPage` (warn and stop
 collecting past 200 threads):
 
@@ -94,7 +144,36 @@ comment's author/createdAt/body (flatten `author` to its `login` string).
 From `reviews`, compute `reviewers`: the latest non-`COMMENTED` review state
 per login, as `[{login, state}]` (states like APPROVED / CHANGES_REQUESTED).
 
-## Step 4 — Fetch general PR comments
+**GitLab** — fetch the MR discussions (paginate while there are more pages):
+
+```
+GITLAB_HOST=$HOST glab api "projects/<ENC>/merge_requests/N/discussions?per_page=100" --paginate
+```
+
+Keep ONLY discussions that have a note with `resolvable: true` AND
+`resolved: false` (these are the unresolved threads; drop plain individual
+notes — they are handled in Step 4). For each kept discussion map to the
+neutral shape:
+- `id` ← discussion `id` (a string hash).
+- `path` ← the first note's `position.new_path` (fall back to `old_path`).
+- `line` ← `position.new_line` (fall back to `old_line`); `startLine` from
+  `position.line_range.start.new_line` when present, else null.
+- `replyToDatabaseId` ← the first note's `id`.
+- `isOutdated` ← `true` when the diff `position` is null/absent, else `false`.
+- `viewerCanResolve` ← `true` (a resolvable discussion can be resolved by a
+  member; the server still re-checks before resolving).
+- `comments` ← every note's `{author: note.author.username, createdAt:
+  note.created_at, body: note.body}`.
+- `diffHunk` ← omit (GitLab has no equivalent single hunk; the UI falls back to
+  the path/line and your code reading).
+
+For `reviewers`, list the MR's reviewers/approvers:
+`GITLAB_HOST=$HOST glab api "projects/<ENC>/merge_requests/N/approvals"` (or the
+MR's `reviewers[]`), as `[{login, state}]`.
+
+## Step 4 — Fetch general PR comments / MR notes
+
+**GitHub:**
 
 ```
 gh api repos/OWNER/REPO/issues/N/comments --paginate \
@@ -102,13 +181,42 @@ gh api repos/OWNER/REPO/issues/N/comments --paginate \
 ```
 
 `--paginate` may emit one JSON array PER PAGE — merge them. Exclude comments
-authored by SELF and comments where `type` is `"Bot"` (mention how many you
-excluded). If there are 0 threads AND 0 general comments, tell the user there
-is nothing to reply to and STOP — do not start a session.
+authored by SELF and comments where `type` is `"Bot"`.
+
+**GitLab** — fetch the top-level MR notes:
+
+```
+GITLAB_HOST=$HOST glab api "projects/<ENC>/merge_requests/N/notes?per_page=100" --paginate
+```
+
+Keep notes where `individual_note` is true (top-level, not part of a
+discussion) and `system` is false; exclude notes authored by SELF and bot
+authors (`author.bot` true). Map each to `{databaseId: note.id, author:
+note.author.username, createdAt: note.created_at, url:
+"https://$HOST/REPO/-/merge_requests/N#note_<note.id>", body: note.body}`.
+
+(Either provider) mention how many comments you excluded. If there are 0
+threads AND 0 general comments, tell the user there is nothing to reply to and
+STOP — do not start a session.
 
 ## Step 5 — Propose a per-comment plan
 
-For each unresolved thread:
+First, pull this repo's priors from past sessions (read-only, no network):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/server/server.js" suggest --repo $REPO --repo-dir $REPO_DIR
+```
+
+(add `--provider gitlab` for a GitLab MR). It prints JSON: `actionPriors`
+(this repo's historical fix/reply/skip rates), `categoryPriors` (rates per
+category), and `templates` (your reusable reply snippets). Use it to:
+- Lean `suggestedAction`/`confidence` toward the repo's norm for similar
+  comments (e.g. if this repo almost always fixes "error-handling" feedback,
+  bias such a comment toward `fix` with higher confidence).
+- When a comment matches a template's intent, pre-seed its draft from that
+  template body (the UI fills `{{author}}`/`{{sha}}` placeholders).
+
+Then, for each unresolved thread:
 1. Read the file at `path` from roughly (startLine ?? line) − 30 to line + 30.
    If outdated or the file/line is gone, rely on the `diffHunk`. Grep for
    symbols if needed, but keep extra reading small.
@@ -127,6 +235,11 @@ For each unresolved thread:
 
 Do the same for each general comment (these can also be `"fix"`).
 
+Optionally tag each thread/comment with a short `category` string (e.g.
+`"tests"`, `"error-handling"`, `"naming"`, `"docs"`). It is purely for the
+learning loop — the server records it into history so future `suggest` runs can
+bias priors by category. It is never shown to the reviewer.
+
 ## Step 6 — Start the session
 
 ```
@@ -138,6 +251,11 @@ Write `$SESSION/triage.payload.json` following EXACTLY the schema of
 `${CLAUDE_PLUGIN_ROOT}/examples/payload.triage.json` (`version: 2`, repo, pr
 with `reviewers`, generatedAt, reviewThreads with viewerCanResolve /
 suggestedAction / confidence / fixPlan / proposedDiff, issueComments likewise).
+
+For **GitLab**, follow `${CLAUDE_PLUGIN_ROOT}/examples/payload.triage.gitlab.json`
+instead: set `provider: "gitlab"`, `repo.host: "$HOST"`, `repo.nameWithOwner` to
+the `group/project` path, and `pr.number` to the MR IID. (For GitHub leave
+`provider` absent — it defaults to GitHub.)
 
 Optionally include `pr.assignableUsers` (an array of collaborator logins) to
 populate the browser's "assign to a teammate" picker. Reviewer grouping and the
@@ -151,7 +269,9 @@ call — it lives for the whole session):
 node "${CLAUDE_PLUGIN_ROOT}/server/server.js" serve --session $SESSION --repo-dir $REPO_DIR
 ```
 
-Add `--no-post` when `--dry-run`. For reply-only mode (`--no-fix` or
+For **GitLab**, add `--provider gitlab` (and `--host $HOST` for a self-managed
+instance) to the `serve` command. Add `--no-post` when `--dry-run`. For
+reply-only mode (`--no-fix` or
 cross-repo): skip the triage payload, write the reply payload (Step 9) now,
 and launch with `--start-phase reply`, then jump to Step 10.
 
@@ -220,23 +340,33 @@ After all fixes: `git push`, then `emit --type push --status ok` (or
 
 ## Step 9 — Draft replies and advance
 
-`emit --type drafting` first. Draft a reply for every non-skipped item:
-- Fixed items: "Fixed in `<shortsha>` — <one line on what changed>." Set
-  `fixedIn` to the short SHA and `resolveDefault` to true when the thread's
+`emit --type drafting` first. For every non-skipped item write **two** reply
+variants — the user picks one in the browser:
+- `draft` (**Direct / fix-plan**): concise and technical. Fixed items read like
+  "I'll apply the fix by <what changed> — in `<shortsha>`." or "Fixed in
+  `<shortsha>` — <one line>." Reply-only items give a precise technical answer.
+- `draftHumanized` (**Humanized**): the SAME factual substance in a warmer,
+  more conversational tone. Both variants must agree on every claim and on the
+  `fixedIn` SHA — never invent claims about the code.
+
+Shared rules for both variants:
+- Set `fixedIn` to the short SHA and `resolveDefault` to true when the thread's
   `viewerCanResolve` is true.
-- Reply-only items: a concise answer, under ~120 words, friendly, technical,
-  no greetings/sign-offs. If the requested change already exists, say where.
-  If you cannot determine the answer from the code, ask a clarifying question
-  instead of guessing. Never invent claims about the code.
+- Keep each under ~120 words, no greetings/sign-offs. If the requested change
+  already exists, say where. If you cannot determine the answer from the code,
+  ask a clarifying question instead of guessing.
 - General comments post as NEW top-level PR comments, so quote the first 1–2
-  lines as a markdown `> quote` and @-mention the author.
+  lines as a markdown `> quote` and @-mention the author (in both variants).
 - Do NOT append any signature — the server appends the user's configured
   signature automatically.
 
 Write `$SESSION/reply.payload.json` following EXACTLY
 `${CLAUDE_PLUGIN_ROOT}/examples/payload.reply.json` (`version: 2`; threads
-carry draft / fixedIn / resolveDefault / viewerCanResolve). Do NOT include fix
-diffs — the server reads them from git itself. Then:
+carry draft / draftHumanized / fixedIn / resolveDefault / viewerCanResolve).
+For **GitLab**, use
+`${CLAUDE_PLUGIN_ROOT}/examples/payload.reply.gitlab.json` and keep the same
+`provider` / `repo.host` you wrote in Step 6. Do NOT include fix diffs — the
+server reads them from git itself. Then:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/server/server.js" advance --session $SESSION --phase reply
@@ -266,10 +396,10 @@ anyway), so the sentinel result is final:
 
 The server records an audit entry for every finished session (submitted,
 cancelled, or timed out) to `~/.config/pr-replies/history/` automatically — you
-do not write it. Users browse past sessions, manage reply templates, and see
-which PRs still need attention from the **hub**:
-`node "${CLAUDE_PLUGIN_ROOT}/server/server.js" serve --home` (a payload-less
-dashboard; mention it if the user asks where their history/templates live).
+do not write it. Users browse past sessions and manage reply templates from the
+**hub** — they open it with the **`/pr-dashboard`** command (which runs
+`server.js serve --home`). Mention `/pr-dashboard` if the user asks where their
+history/templates live.
 
 Summarize as a short table: fixes pushed (SHAs), replies posted (URLs),
 threads resolved, skipped, failed (including `resolveErrors`, which are

@@ -84,7 +84,7 @@ function spyHistory() {
 
 const REVIEW_REPLY = {
   key: 'review:PRRT_1', kind: 'review', threadId: 'PRRT_1', replyToDatabaseId: 111,
-  path: 'src/a.js', line: 5, body: 'fixed, thanks', resolve: true,
+  path: 'src/a.js', line: 5, body: 'fixed, thanks', resolve: true, variant: 'humanized',
 };
 const ISSUE_REPLY = { key: 'issue:222', kind: 'issue', body: 'done' };
 
@@ -270,7 +270,7 @@ test('submitReplies: happy path posts, resolves, finalizes to done', async () =>
   assert.equal(gh.calls.review[0].threadId, 'PRRT_1');
   assert.equal(gh.calls.review[0].replyToDatabaseId, 111);
   assert.equal(gh.calls.issue.length, 1);
-  assert.deepEqual(gh.calls.resolve, [{ threadId: 'PRRT_1' }]);
+  assert.deepEqual(gh.calls.resolve, [{ repo: 'o/r', pr: 42, threadId: 'PRRT_1', replyToDatabaseId: 111 }]);
 
   // events: posting → posted per key, resolve, post_done with failed 0
   const events = state.eventsSince(0);
@@ -289,6 +289,8 @@ test('submitReplies: happy path posts, resolves, finalizes to done', async () =>
   const result = readJson(sessionPaths(dir).replyResult);
   assert.equal(result.status, 'submitted');
   assert.equal(result.posted.length, 2);
+  // the chosen draft variant is recorded on the posted entry (for history)
+  assert.equal(result.posted.find((p) => p.key === 'review:PRRT_1').variant, 'humanized');
   assert.equal(result.resolved.length, 1);
   assert.equal(result.resolved[0].key, 'review:PRRT_1');
   assert.deepEqual(result.errors, []);
@@ -493,6 +495,52 @@ test('history: finalizeReply records the session once as submitted', async () =>
   assert.equal(history.records[0].pr, 42);
   assert.equal(history.records[0].posted.length, 2);
   assert.equal(history.records[0].resolved.length, 1);
+  // Absent provider ⇒ GitHub defaults are recorded.
+  assert.equal(history.records[0].provider, 'github');
+  assert.equal(history.records[0].host, 'github.com');
+});
+
+test('provider/host: a GitLab payload is reflected in the snapshot and the record', async () => {
+  const dir = tmpDir();
+  const payload = replyPayload();
+  payload.provider = 'gitlab';
+  payload.repo.host = 'gl.acme.dev';
+  writeReply(dir, payload);
+  const history = spyHistory();
+  const state = makeState(dir, { history });
+  await state.init({ startPhase: 'reply' });
+
+  const snap = state.snapshot();
+  assert.equal(snap.provider, 'gitlab');
+  assert.equal(snap.host, 'gl.acme.dev');
+
+  await state.submitReplies({ replies: [REVIEW_REPLY, ISSUE_REPLY] });
+  assert.equal(history.records[0].provider, 'gitlab');
+  assert.equal(history.records[0].host, 'gl.acme.dev');
+});
+
+test('history: decisions are enriched with reviewer + category from the triage payload', async () => {
+  const dir = tmpDir();
+  const payload = triagePayload();
+  payload.reviewThreads[0].category = 'error-handling'; // Claude-tagged
+  writeTriage(dir, payload);
+  writeReply(dir);
+  const history = spyHistory();
+  const state = makeState(dir, { history });
+  await state.init({ startPhase: 'triage' });
+  // The browser submits sparse decisions (no author/category).
+  state.submitTriage([
+    { kind: 'review', threadId: 'PRRT_1', action: 'fix' },
+    { kind: 'issue', databaseId: 222, action: 'reply' },
+  ]);
+  state.stop('cancelled');
+
+  const decisions = history.records[0].decisions;
+  const review = decisions.find((d) => d.threadId === 'PRRT_1');
+  assert.equal(review.author, 'rev');            // first comment author
+  assert.equal(review.category, 'error-handling'); // Claude's tag
+  const issue = decisions.find((d) => d.databaseId === 222);
+  assert.equal(issue.author, 'rev2');
 });
 
 test('history: stop(timeout) records once as timeout', async () => {

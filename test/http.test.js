@@ -243,12 +243,10 @@ function fakeData() {
   let saved = [{ id: 'a', name: 'A', scope: 'reply', body: 'x', source: 'user', readonly: false }];
   return {
     sessions() { return [{ repo: 'o/r', pr: 1, phase: 'reply', url: 'http://127.0.0.1:1/t/', pid: 1, alive: true, startedAt: '', updatedAt: '' }]; },
-    async prs() { return { available: false, reason: 'disabled' }; },
     history() { return [{ id: 'h1', repo: 'o/r', pr: 1, status: 'submitted', endedAt: '', counts: {} }]; },
     historyDetail(id) { return id === 'h1' ? { id: 'h1', repo: 'o/r', pr: 1, posted: [] } : null; },
     templates() { return saved; },
     saveTemplates(list) { saved = list.map((t) => Object.assign({ source: 'user', readonly: false }, t)); return saved; },
-    async dashboard() { return { mode: 'session', sessions: this.sessions(), history: this.history() }; },
   };
 }
 
@@ -273,12 +271,9 @@ function bootHome() {
   return new Promise((resolve) => app.server.listen(0, '127.0.0.1', () => resolve({ server: app.server, port: app.server.address().port })));
 }
 
-test('data plane: GET dashboard/sessions/history/templates return shapes', async () => {
+test('data plane: GET sessions/history/templates return shapes', async () => {
   const s = await bootData();
   try {
-    const dash = await req(s.port, 'GET', '/tok/data/dashboard');
-    assert.equal(dash.status, 200);
-    assert.equal(dash.body.sessions.length, 1);
     assert.equal((await req(s.port, 'GET', '/tok/data/sessions')).body.sessions.length, 1);
     assert.equal((await req(s.port, 'GET', '/tok/data/history')).body.history.length, 1);
     assert.equal((await req(s.port, 'GET', '/tok/data/templates')).body.templates[0].id, 'a');
@@ -287,6 +282,9 @@ test('data plane: GET dashboard/sessions/history/templates return shapes', async
     assert.equal(detail.body.pr, 1);
     const missing = await req(s.port, 'GET', '/tok/data/history/nope');
     assert.equal(missing.status, 404);
+    // removed routes now 404
+    assert.equal((await req(s.port, 'GET', '/tok/data/dashboard')).status, 404);
+    assert.equal((await req(s.port, 'GET', '/tok/data/insights')).status, 404);
     // wrong token / bad host still guarded on data routes
     assert.equal((await req(s.port, 'GET', '/bad/data/templates')).status, 404);
     assert.equal((await req(s.port, 'GET', '/tok/data/templates', null, { Host: 'evil.com' })).status, 400);

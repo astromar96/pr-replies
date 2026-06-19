@@ -1,8 +1,8 @@
 {
   "name": "pr-replies",
-  "version": "2.2.0",
+  "version": "2.4.0",
   "private": true,
-  "description": "Triage, fix, and reply to GitHub PR comments in a live browser session (Claude Code plugin)",
+  "description": "Triage, fix, and reply to GitHub PR / GitLab MR comments in a live browser session — with dual reply drafts (direct + humanized), history, and reply templates (Claude Code plugin)",
   "license": "MIT",
   "scripts": {
     "test": "node --test test/*.test.js",

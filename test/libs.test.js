@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { getFixCommit } = require('../server/lib/git.js');
+const { getFixCommit, parseRemoteUrl, classifyHost, detectRemote, detectBranch } = require('../server/lib/git.js');
 const { openUrl } = require('../server/lib/open.js');
 const { loadConfig, CONFIG_PATH, DEFAULTS } = require('../server/lib/config.js');
 
@@ -80,6 +80,46 @@ test('git: falsy repoDir/sha resolve null without calling exec', async () => {
   assert.equal(calls.length, 0);
 });
 
+// ---------- remote detection ----------
+test('parseRemoteUrl: scp, https, ssh, token, and nested-group forms', () => {
+  assert.deepEqual(parseRemoteUrl('git@github.com:owner/repo.git'), { host: 'github.com', nameWithOwner: 'owner/repo' });
+  assert.deepEqual(parseRemoteUrl('https://github.com/owner/repo.git'), { host: 'github.com', nameWithOwner: 'owner/repo' });
+  assert.deepEqual(parseRemoteUrl('ssh://git@gitlab.com:22/group/sub/repo.git'), { host: 'gitlab.com', nameWithOwner: 'group/sub/repo' });
+  assert.deepEqual(parseRemoteUrl('https://oauth2:tok@gl.acme.dev/group/repo.git'), { host: 'gl.acme.dev', nameWithOwner: 'group/repo' });
+  assert.equal(parseRemoteUrl(''), null);
+  assert.equal(parseRemoteUrl('not a url'), null);
+});
+
+test('classifyHost: github/gitlab incl. self-managed, ambiguous ⇒ null', () => {
+  assert.equal(classifyHost('github.com'), 'github');
+  assert.equal(classifyHost('gitlab.com'), 'gitlab');
+  assert.equal(classifyHost('gitlab.acme.com'), 'gitlab');
+  assert.equal(classifyHost('github.acme.com'), 'github');
+  assert.equal(classifyHost('git.example.org'), null);
+});
+
+test('detectRemote: parses origin and classifies the provider', async () => {
+  const exec = (file, argv) => {
+    assert.deepEqual(argv, ['-C', '/repo', 'remote', 'get-url', 'origin']);
+    return Promise.resolve('git@gitlab.com:group/proj.git\n');
+  };
+  assert.deepEqual(await detectRemote({ repoDir: '/repo', exec }), {
+    provider: 'gitlab', host: 'gitlab.com', nameWithOwner: 'group/proj', remoteUrl: 'git@gitlab.com:group/proj.git',
+  });
+});
+
+test('detectRemote: no repoDir or a failing git resolves null', async () => {
+  assert.equal(await detectRemote({ repoDir: null }), null);
+  const exec = () => Promise.reject(new Error('no remote'));
+  assert.equal(await detectRemote({ repoDir: '/repo', exec }), null);
+});
+
+test('detectBranch: returns the current branch, null on failure', async () => {
+  assert.equal(await detectBranch({ repoDir: '/repo', exec: () => Promise.resolve('feat/cache\n') }), 'feat/cache');
+  assert.equal(await detectBranch({ repoDir: '/repo', exec: () => Promise.reject(new Error('detached')) }), null);
+  assert.equal(await detectBranch({ repoDir: null }), null);
+});
+
 // ---------- open ----------
 test('open: darwin uses open', async () => {
   const { exec, calls } = fakeExec('');
@@ -124,7 +164,6 @@ test('config: CONFIG_PATH and DEFAULTS shape', () => {
     waitTimeoutSecs: 540,
     historyMax: 200,
     theme: 'system',
-    dashboardListPrs: false,
   });
 });
 
@@ -224,14 +263,13 @@ test('config: valid full file round-trips with no warnings', () => {
     waitTimeoutSecs: 300,
     historyMax: 50,
     theme: 'dark',
-    dashboardListPrs: true,
   };
   const { config, warnings } = loadConfig({ configPath: writeConfig(JSON.stringify(full)) });
   assert.deepEqual(config, full);
   assert.deepEqual(warnings, []);
 });
 
-test('config: historyMax validated and capped at 2000; theme + dashboardListPrs validated', () => {
+test('config: historyMax validated and capped at 2000; theme validated', () => {
   const capped = loadConfig({ configPath: writeConfig(JSON.stringify({ historyMax: 99999 })) });
   assert.equal(capped.config.historyMax, 2000);
   assert.equal(capped.warnings.length, 1);
@@ -241,8 +279,4 @@ test('config: historyMax validated and capped at 2000; theme + dashboardListPrs 
   assert.equal(badTheme.config.theme, 'system');
   assert.equal(badTheme.warnings.length, 1);
   assert.match(badTheme.warnings[0], /^config: theme/);
-
-  const badList = loadConfig({ configPath: writeConfig(JSON.stringify({ dashboardListPrs: 'yes' })) });
-  assert.equal(badList.config.dashboardListPrs, false);
-  assert.equal(badList.warnings.length, 1);
 });

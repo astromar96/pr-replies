@@ -10,7 +10,7 @@
     {
       "name": "pr-replies",
       "source": "./",
-      "description": "Triage, fix, and reply to GitHub PR review comments from a local browser UI"
+      "description": "Triage, fix, and reply to GitHub PR / GitLab MR review comments from a local browser UI — pick from dual reply drafts (direct + humanized), with history and reply templates"
     }
   ]
 }

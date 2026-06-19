@@ -20,7 +20,6 @@ const DEFAULTS = {
   waitTimeoutSecs: 540,
   historyMax: 200,
   theme: 'system',
-  dashboardListPrs: false,
 };
 
 const TRIAGE_ACTIONS = [null, 'fix', 'reply', 'skip'];
@@ -110,13 +109,6 @@ function loadConfig({ configPath = CONFIG_PATH } = {}) {
           warnings.push('config: theme must be "light", "dark", or "system"; using default');
         } else {
           config.theme = value;
-        }
-        break;
-      case 'dashboardListPrs':
-        if (typeof value !== 'boolean') {
-          warnings.push('config: dashboardListPrs must be a boolean; using default');
-        } else {
-          config.dashboardListPrs = value;
         }
         break;
     }

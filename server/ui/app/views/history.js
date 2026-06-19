@@ -10,7 +10,7 @@
   const useEffect = PRR.hooks.useEffect;
 
   PRR.help.history = [
-    ['g d / g h / g t / g p', 'Dashboard / History / Templates / Active PR'],
+    ['g h / g t / g p', 'History / Templates / Active PR'],
     ['?', 'toggle this help'],
   ];
 

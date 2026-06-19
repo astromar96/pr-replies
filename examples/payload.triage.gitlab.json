@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "provider": "gitlab",
+  "repo": {
+    "owner": "acme-group",
+    "name": "demo-repo",
+    "nameWithOwner": "acme-group/demo-repo",
+    "host": "gitlab.com"
+  },
+  "pr": {
+    "number": 42,
+    "title": "Add caching layer",
+    "url": "https://gitlab.com/acme-group/demo-repo/-/merge_requests/42",
+    "author": "astromar96",
+    "headRefName": "feat/cache",
+    "reviewers": [
+      { "login": "reviewer1", "state": "CHANGES_REQUESTED" },
+      { "login": "reviewer2", "state": "APPROVED" }
+    ]
+  },
+  "generatedAt": "2026-06-12T12:00:00Z",
+  "reviewThreads": [
+    {
+      "id": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+      "isOutdated": false,
+      "viewerCanResolve": true,
+      "path": "src/cache.js",
+      "startLine": null,
+      "line": 120,
+      "diffHunk": "@@ -115,6 +115,9 @@ function get(key) {\n   const entry = store.get(key);\n+  if (entry.expiresAt > Date.now()) {\n+    return entry.value;\n+  }\n   return undefined;",
+      "replyToDatabaseId": 987654321,
+      "comments": [
+        {
+          "author": "reviewer1",
+          "createdAt": "2026-06-11T09:00:00Z",
+          "body": "Shouldn't this handle the case where `entry` is undefined? A cache miss would throw here."
+        },
+        {
+          "author": "reviewer2",
+          "createdAt": "2026-06-11T10:00:00Z",
+          "body": "+1, and why warm the cache eagerly at startup?"
+        }
+      ],
+      "suggestedAction": "fix",
+      "confidence": "high",
+      "fixPlan": "Add an early return when `store.get(key)` returns undefined, before the `expiresAt` check, so a cache miss returns undefined instead of throwing.",
+      "proposedDiff": "@@ -115,6 +115,7 @@ function get(key) {\n   const entry = store.get(key);\n+  if (!entry) return undefined;\n   if (entry.expiresAt > Date.now()) {\n     return entry.value;\n   }"
+    }
+  ],
+  "issueComments": [
+    {
+      "databaseId": 555444333,
+      "author": "reviewer2",
+      "createdAt": "2026-06-11T11:00:00Z",
+      "url": "https://gitlab.com/acme-group/demo-repo/-/merge_requests/42#note_555444333",
+      "body": "Can you also update the changelog before merging?",
+      "suggestedAction": "fix",
+      "confidence": "high",
+      "fixPlan": "Add an entry under Unreleased in CHANGELOG.md describing the new caching layer.",
+      "proposedDiff": null
+    }
+  ]
+}

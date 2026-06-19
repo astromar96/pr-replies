@@ -38,37 +38,6 @@ test('sessions() reports liveness via injected isPidAlive, live-first', () => {
   assert.equal(sessions[1].alive, false);
 });
 
-test('prs() parses injected gh JSON and caches within the TTL', async () => {
-  freshConfig();
-  let calls = 0;
-  let clock = 1000;
-  const exec = async () => {
-    calls++;
-    return JSON.stringify([
-      { number: 7, title: 'A', author: { login: 'bob' }, reviewDecision: 'CHANGES_REQUESTED', updatedAt: '2026-01-01T00:00:00Z', url: 'u7' },
-    ]);
-  };
-  const dp = createDataPlane({ repoDir: '/x', config: { dashboardListPrs: true }, exec, now: () => clock });
-
-  const a = await dp.prs(false);
-  assert.equal(a.available, true);
-  assert.equal(a.items[0].author, 'bob');
-  assert.equal(a.items[0].number, 7);
-  await dp.prs(false);                 // cached
-  assert.equal(calls, 1);
-  clock += 61 * 1000;                  // past the 60s TTL
-  await dp.prs(false);
-  assert.equal(calls, 2);
-});
-
-test('prs() unavailable without a repo dir or when disabled', async () => {
-  freshConfig();
-  const noRepo = createDataPlane({ repoDir: null, exec: async () => '[]' });
-  assert.equal((await noRepo.prs(false)).available, false);
-  const disabled = createDataPlane({ repoDir: '/x', config: { dashboardListPrs: false }, exec: async () => '[]' });
-  assert.equal((await disabled.prs(false)).available, false);
-});
-
 test('templates() and saveTemplates() round-trip through the store', () => {
   freshConfig();
   const dp = createDataPlane({});
@@ -88,17 +57,12 @@ test('historyDetail() only returns ids present in the listing', () => {
   assert.equal(dp.historyDetail('../escape'), null);
 });
 
-test('dashboard() composes sessions + history (+ prs when enabled)', async () => {
+test('history() returns the newest-first session summaries', () => {
   freshConfig();
-  const sessionsDir = seedSessions();
-  store.writeHistory({ version: 1, id: 'o-r-pr9-900', repo: 'o/r', pr: 9, status: 'submitted', endedAt: '2026-01-01T00:00:00Z', counts: { posted: 2 } });
-  const dp = createDataPlane({
-    sessionsDir, mode: 'home', repoDir: '/x', config: { dashboardListPrs: true },
-    alive: () => true, exec: async () => '[]',
-  });
-  const d = await dp.dashboard({});
-  assert.equal(d.mode, 'home');
-  assert.equal(d.sessions.length, 2);
-  assert.equal(d.history.length, 1);
-  assert.equal(d.prs.available, true);
+  store.writeHistory({ version: 1, id: 'o-r-pr1-1', repo: 'o/r', pr: 1, status: 'submitted', endedAt: '2026-03-01T10:20:00Z', counts: { posted: 1 } });
+  store.writeHistory({ version: 1, id: 'o-r-pr2-2', repo: 'o/r', pr: 2, status: 'submitted', endedAt: '2026-03-02T10:40:00Z', counts: { posted: 2 } });
+  const dp = createDataPlane({});
+  const h = dp.history();
+  assert.equal(h.length, 2);
+  assert.equal(h[0].pr, 2); // newest by endedAt first
 });

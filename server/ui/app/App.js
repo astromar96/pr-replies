@@ -1,7 +1,7 @@
 'use strict';
 /* App shell — the persistent nav, the hash router, and the dispatch into the
  * active view. The '#/pr' route is the per-PR phase flow (triage / fixing /
- * reply / done|cancelled); Dashboard / History / Templates are sibling routes.
+ * reply / done|cancelled); History / Templates are sibling routes.
  * Routing reads the route + snapshot stores; the phase machine on the server
  * stays the single source of truth via the snapshot. */
 (function () {
@@ -11,7 +11,6 @@
   const useEffect = PRR.hooks.useEffect;
 
   const NAV = [
-    { name: 'dashboard', label: 'Dashboard', modes: ['home', 'session'] },
     { name: 'pr', label: 'Active PR', modes: ['session'] },
     { name: 'history', label: 'History', modes: ['home', 'session'] },
     { name: 'templates', label: 'Templates', modes: ['home', 'session'] },
@@ -26,7 +25,7 @@
     const r = NAV.find(function (n) { return n.name === name; });
     return !!(r && r.modes.indexOf(modeOf(s)) !== -1 && (name !== 'pr' || hasPr(s)));
   }
-  function defaultRoute(s) { return modeOf(s) === 'home' ? 'dashboard' : 'pr'; }
+  function defaultRoute(s) { return modeOf(s) === 'home' ? 'history' : 'pr'; }
   function resolveName(route, s) {
     let name = route.name || defaultRoute(s);
     if (!available(name, s)) name = defaultRoute(s);
@@ -100,7 +99,7 @@
         : 'pr-replies';
     }, [phase, curName, snapshot]);
 
-    // go-to chords: g d / g h / g t / g p (capture phase, so they win over
+    // go-to chords: g h / g t / g p (capture phase, so they win over
     // per-view single-key bindings like reply's 'p').
     useEffect(function () {
       let pendingG = 0;
@@ -111,7 +110,7 @@
         const k = ev.key.toLowerCase();
         if (pendingG && Date.now() - pendingG < 1000) {
           pendingG = 0;
-          const dest = { d: 'dashboard', h: 'history', t: 'templates', p: 'pr' }[k];
+          const dest = { h: 'history', t: 'templates', p: 'pr' }[k];
           const snap = PRR.stores.snapshot.get();
           if (dest && available(dest, snap)) { ev.preventDefault(); ev.stopPropagation(); PRR.stores.route.go(dest); }
           return;

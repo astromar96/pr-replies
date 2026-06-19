@@ -27,6 +27,6 @@ var PRR = (typeof PRR !== 'undefined' && PRR) || {};
     Fragment: React.Fragment,
   };
   PRR.views = {};       // phase views: triage / fixing / reply
-  PRR.routes = {};      // hub routes: dashboard / history / templates (+ pr)
+  PRR.routes = {};      // hub routes: history / templates (+ pr)
   PRR.components = {};   // shared presentational components
 })();

@@ -66,6 +66,7 @@ function writeUserTemplates(list) {
 function summary(rec) {
   return {
     id: rec.id, repo: rec.repo, pr: rec.pr, prTitle: rec.prTitle, prUrl: rec.prUrl,
+    provider: rec.provider || 'github', host: rec.host || null,
     status: rec.status, dryRun: !!rec.dryRun,
     startedAt: rec.startedAt, endedAt: rec.endedAt, counts: rec.counts || {},
   };
@@ -77,15 +78,21 @@ function historyFiles() {
   } catch (_) { return []; }
 }
 
-// Newest-first summaries (by endedAt), bounded by `limit`.
-function listHistory(limit) {
+// Newest-first FULL records (by endedAt), bounded by `limit`. `suggest` needs
+// the whole record (decisions, timestamps); listHistory maps these to summaries.
+function allHistory(limit) {
   const recs = [];
   for (const n of historyFiles()) {
     const rec = readJson(path.join(historyDir(), n));
     if (rec && rec.id) recs.push(rec);
   }
   recs.sort((a, b) => String(b.endedAt || '').localeCompare(String(a.endedAt || '')));
-  return (limit ? recs.slice(0, limit) : recs).map(summary);
+  return limit ? recs.slice(0, limit) : recs;
+}
+
+// Newest-first summaries (by endedAt), bounded by `limit`.
+function listHistory(limit) {
+  return allHistory(limit).map(summary);
 }
 
 function historyIds() {
@@ -120,5 +127,5 @@ function writeHistory(rec) {
 module.exports = {
   configDir, templatesUserPath, templatesRepoPath, historyDir, historyPath, isValidId,
   readMergedTemplates, writeUserTemplates,
-  listHistory, historyIds, readHistory, pruneHistory, writeHistory, summary,
+  allHistory, listHistory, historyIds, readHistory, pruneHistory, writeHistory, summary,
 };

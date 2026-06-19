@@ -7,6 +7,7 @@
 
 const ACTIONS = ['fix', 'reply'];
 const CONFIDENCES = ['high', 'medium', 'low'];
+const PROVIDERS = ['github', 'gitlab'];
 const TEMPLATE_SCOPES = ['reply', 'guidance', 'both'];
 const MAX_TEMPLATES = 200;
 const MAX_TEMPLATE_BODY = 8000;
@@ -41,6 +42,10 @@ function checkCommon(errors, payload) {
   if (payload.version !== 2) err(errors, 'version', `expected 2, got ${JSON.stringify(payload.version)}`);
   if (!payload.repo || typeof payload.repo.nameWithOwner !== 'string') err(errors, 'repo.nameWithOwner', 'missing');
   if (!payload.pr || !Number.isInteger(payload.pr.number)) err(errors, 'pr.number', 'missing or not an integer');
+  // provider/host are additive-optional: an absent provider means GitHub, so
+  // every pre-existing v2 payload (and GitHub-only callers) validate unchanged.
+  checkEnum(errors, 'provider', payload.provider, PROVIDERS, { optional: true });
+  if (payload.repo) checkString(errors, 'repo.host', payload.repo.host, { optional: true });
   if (payload.pr) {
     checkString(errors, 'pr.title', payload.pr.title);
     checkString(errors, 'pr.url', payload.pr.url);
@@ -68,6 +73,9 @@ function checkThreadCore(errors, where, t) {
   if (typeof t.isOutdated !== 'boolean') err(errors, `${where}.isOutdated`, 'missing boolean');
   if (typeof t.viewerCanResolve !== 'boolean') err(errors, `${where}.viewerCanResolve`, 'missing boolean');
   checkString(errors, `${where}.assignee`, t.assignee, { optional: true });
+  // A free-form classification (e.g. "tests", "error-handling") Claude may tag
+  // for the learning loop; persisted into history for `suggest` priors.
+  checkString(errors, `${where}.category`, t.category, { optional: true });
   checkComments(errors, where, t.comments);
 }
 
@@ -98,6 +106,7 @@ function validateTriagePayload(payload) {
     checkString(errors, `${where}.fixPlan`, c.fixPlan, { optional: true });
     checkString(errors, `${where}.proposedDiff`, c.proposedDiff, { optional: true });
     checkString(errors, `${where}.assignee`, c.assignee, { optional: true });
+    checkString(errors, `${where}.category`, c.category, { optional: true });
   });
   return errors;
 }
@@ -112,6 +121,7 @@ function validateReplyPayload(payload) {
     const where = `reviewThreads[${i}]`;
     checkThreadCore(errors, where, t);
     checkString(errors, `${where}.draft`, t.draft, { optional: true });
+    checkString(errors, `${where}.draftHumanized`, t.draftHumanized, { optional: true });
     checkString(errors, `${where}.fixedIn`, t.fixedIn, { optional: true });
     if (t.resolveDefault != null && typeof t.resolveDefault !== 'boolean') {
       err(errors, `${where}.resolveDefault`, 'expected boolean');
@@ -123,6 +133,7 @@ function validateReplyPayload(payload) {
     checkString(errors, `${where}.author`, c.author);
     checkString(errors, `${where}.body`, c.body);
     checkString(errors, `${where}.draft`, c.draft, { optional: true });
+    checkString(errors, `${where}.draftHumanized`, c.draftHumanized, { optional: true });
     checkString(errors, `${where}.fixedIn`, c.fixedIn, { optional: true });
     checkString(errors, `${where}.assignee`, c.assignee, { optional: true });
   });

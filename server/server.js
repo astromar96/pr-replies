@@ -22,6 +22,7 @@
  *                     [--reason TXT] [--name TXT] [--status TXT] [--detail TXT] [--text TXT]
  *   server.js advance --session DIR --phase reply
  *   server.js stop    --session DIR [--cleanup]
+ *   server.js suggest [--repo OWNER/REPO] [--repo-dir PATH] [--provider github|gitlab]
  *
  * Exit codes:
  *   serve   — 0 clean end, 1 boot/validation error, 2 session timeout.
@@ -42,8 +43,9 @@ const crypto = require('node:crypto');
 const { sessionPaths, writeAtomic, readJson, readEvents, appendEvent, isPidAlive } = require('./lib/session');
 const { createState } = require('./lib/state');
 const { createApp } = require('./lib/httpServer');
-const { createGithub } = require('./lib/github');
+const { createProvider, isProviderName } = require('./lib/providers');
 const { createDataPlane } = require('./lib/dataPlane');
+const { buildSuggestions } = require('./lib/suggest');
 const { createHistory } = require('./lib/history');
 const store = require('./lib/store');
 const git = require('./lib/git');
@@ -69,12 +71,16 @@ function printSentinel(obj) {
 
 // ---------- args ----------
 const FLAG_SPECS = {
-  serve: { session: 's', home: 'b', 'repo-dir': 's', 'start-phase': 's', 'no-post': 'b', 'no-open': 'b', resume: 'b', 'session-timeout-mins': 'n', 'linger-secs': 'n' },
+  serve: { session: 's', home: 'b', 'repo-dir': 's', 'start-phase': 's', provider: 's', host: 's', 'no-post': 'b', 'no-open': 'b', resume: 'b', 'session-timeout-mins': 'n', 'linger-secs': 'n' },
   wait: { session: 's', phase: 's', 'timeout-secs': 'n' },
   emit: { session: 's', type: 's', item: 's', sha: 's', summary: 's', reason: 's', name: 's', status: 's', detail: 's', text: 's' },
   advance: { session: 's', phase: 's' },
   stop: { session: 's', cleanup: 'b' },
+  suggest: { repo: 's', 'repo-dir': 's', provider: 's' },
 };
+
+// Read-only, history-only helper — no live session, so no --session required.
+const SESSIONLESS = new Set(['suggest']);
 
 function parseFlags(cmd, argv) {
   const spec = FLAG_SPECS[cmd];
@@ -93,7 +99,7 @@ function parseFlags(cmd, argv) {
   }
   if (cmd === 'serve' && flags.home) {
     if (flags.session) die('serve: --home and --session are mutually exclusive');
-  } else if (!flags.session) {
+  } else if (!SESSIONLESS.has(cmd) && !flags.session) {
     die(`${cmd} requires --session DIR`);
   }
   return flags;
@@ -110,7 +116,7 @@ const VENDOR_SCRIPTS = ['react.production.min.js', 'react-dom.production.min.js'
 const APP_SCRIPTS = [
   'h.js', 'util.js', 'stores.js', 'keys.js', 'components.js',
   'views/triage.js', 'views/progress.js', 'views/reply.js', 'views/final.js',
-  'views/dashboard.js', 'views/history.js', 'views/templates.js',
+  'views/history.js', 'views/templates.js',
   'App.js', 'main.js',
 ].map((f) => path.join('app', f));
 const UI_SCRIPTS = [...VENDOR_SCRIPTS, ...APP_SCRIPTS];
@@ -155,7 +161,7 @@ function postJson(sess, sub, body, timeoutMs = 5000) {
   });
 }
 
-// ---------- serve --home (cross-session hub: dashboard / history / templates) ----------
+// ---------- serve --home (cross-session hub: history / templates) ----------
 async function cmdServeHome(flags) {
   const { config, warnings } = loadConfig();
   for (const w of warnings) logErr(w);
@@ -166,8 +172,9 @@ async function cmdServeHome(flags) {
     die(`hub already running (pid ${existing.pid}): ${existing.url}`);
   }
 
+  // repoDir lets the hub merge repo-local reply templates (.pr-replies/templates.json).
   const repoDir = flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null;
-  const data = createDataPlane({ repoDir, config, mode: 'home' });
+  const data = createDataPlane({ repoDir, config });
   const clientConfig = {
     signature: config.signature || '',
     autoResolveFixedThreads: config.autoResolveFixedThreads !== false,
@@ -235,14 +242,16 @@ async function cmdServe(flags) {
   if (!PHASES.includes(startPhase)) die('--start-phase must be triage or reply');
 
   const stateFlags = { noPost: !!flags['no-post'], repoDir: flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null };
-  const github = createGithub({ noPost: stateFlags.noPost });
+  const providerName = flags.provider || 'github';
+  if (flags.provider && !isProviderName(providerName)) die(`--provider must be github or gitlab (got ${flags.provider})`);
+  const provider = createProvider(providerName, { noPost: stateFlags.noPost, host: flags.host });
   const history = createHistory({
     id: path.basename(sessionDir),
     startedAt: existing && flags.resume ? existing.startedAt : new Date().toISOString(),
     dryRun: stateFlags.noPost,
     historyMax: config.historyMax,
   });
-  const state = createState({ sessionDir, flags: stateFlags, config, github, git, history, log: logErr });
+  const state = createState({ sessionDir, flags: stateFlags, config, provider, git, history, log: logErr });
 
   try {
     if (flags.resume) await state.resume(existing.phase);
@@ -429,10 +438,22 @@ async function cmdStop(flags) {
   if (flags.cleanup) fs.rmSync(sessionDir, { recursive: true, force: true });
 }
 
+// ---------- suggest (triage priors from local history + templates) ----------
+async function cmdSuggest(flags) {
+  const { config } = loadConfig();
+  const out = buildSuggestions({
+    repo: flags.repo || null,
+    repoDir: flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null,
+    provider: flags.provider || null,
+    historyMax: config.historyMax,
+  });
+  process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+}
+
 // ---------- dispatch ----------
 const cmd = process.argv[2];
-const commands = { serve: cmdServe, wait: cmdWait, emit: cmdEmit, advance: cmdAdvance, stop: cmdStop };
+const commands = { serve: cmdServe, wait: cmdWait, emit: cmdEmit, advance: cmdAdvance, stop: cmdStop, suggest: cmdSuggest };
 if (!commands[cmd]) {
-  die(`usage: server.js <serve|wait|emit|advance|stop> --session DIR [options] (see file header)`);
+  die(`usage: server.js <serve|wait|emit|advance|stop|suggest> [--session DIR] [options] (see file header)`);
 }
 commands[cmd](parseFlags(cmd, process.argv.slice(3))).catch((e) => die(e.stack || e.message));

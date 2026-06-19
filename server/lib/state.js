@@ -24,7 +24,45 @@ function httpError(statusCode, message, errors) {
   return e;
 }
 
-function createState({ sessionDir, flags = {}, config = {}, github, git, history = null, log = () => {} }) {
+// An absent provider means GitHub (back-compat with pre-multi-provider
+// payloads). Host defaults to the provider's SaaS domain when not pinned.
+function providerName(payload) {
+  return (payload && payload.provider) || 'github';
+}
+function providerHost(payload) {
+  if (payload && payload.repo && payload.repo.host) return payload.repo.host;
+  return providerName(payload) === 'gitlab' ? 'gitlab.com' : 'github.com';
+}
+
+// History decisions come from the browser submit (kind/threadId|databaseId/
+// action/guidance). Enrich each with the reviewer (the thread's first comment
+// author) and Claude's optional `category` looked up from the triage payload,
+// so `suggest` can build per-reviewer and theme/category priors from history
+// without any UI change. Existing fields win; missing ones are filled.
+function enrichDecisions(decisions, triagePayload) {
+  if (!triagePayload) return decisions || [];
+  const byThread = {};
+  const byComment = {};
+  (triagePayload.reviewThreads || []).forEach((t) => { byThread[t.id] = t; });
+  (triagePayload.issueComments || []).forEach((c) => { byComment[String(c.databaseId)] = c; });
+  return (decisions || []).map((d) => {
+    if (!d || (d.author && d.category)) return d;
+    const src = d.threadId != null ? byThread[d.threadId]
+      : (d.databaseId != null ? byComment[String(d.databaseId)] : null);
+    if (!src) return d;
+    const author = d.author || (src.comments && src.comments[0] && src.comments[0].author) || src.author;
+    const category = d.category || src.category;
+    const out = Object.assign({}, d);
+    if (author && out.author == null) out.author = author;
+    if (category && out.category == null) out.category = category;
+    return out;
+  });
+}
+
+function createState({ sessionDir, flags = {}, config = {}, provider, github, git, history = null, log = () => {} }) {
+  // `provider` is the provider-neutral backend (github/gitlab); `github` is the
+  // legacy keyword still passed by older callers and the unit-test fakes.
+  const prov = provider || github;
   const paths = sessionPaths(sessionDir);
   let recorded = false;
 
@@ -102,11 +140,13 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, history
     return {
       repo,
       pr,
+      provider: providerName(p),
+      host: providerHost(p),
       prTitle: p && p.pr ? p.pr.title : null,
       prUrl: p && p.pr ? p.pr.url : null,
       endedAt: new Date().toISOString(),
       status,
-      decisions: (st.triageResult && st.triageResult.decisions) || [],
+      decisions: enrichDecisions((st.triageResult && st.triageResult.decisions) || [], st.triagePayload),
       posted: results.posted,
       errors: currentFailed(),
       skipped: results.skipped,
@@ -332,19 +372,22 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, history
             recordEvent('post_item', { key: r.key, kind: r.kind, status: 'retrying', attempt, error });
           };
           const out = r.kind === 'review'
-            ? await github.postReviewReply(
+            ? await prov.postReviewReply(
                 { repo, pr, threadId: r.threadId, replyToDatabaseId: r.replyToDatabaseId, body: text }, onAttempt)
-            : await github.postIssueComment({ repo, pr, body: text }, onAttempt);
+            : await prov.postIssueComment({ repo, pr, body: text }, onAttempt);
           if (out.ok) {
             postedKeys.add(r.key);
             results.errors = results.errors.filter((e) => e.key !== r.key);
-            results.posted.push({ kind: r.kind, key: r.key, path: r.path, line: r.line, url: out.url });
+            results.posted.push({ kind: r.kind, key: r.key, path: r.path, line: r.line, url: out.url, variant: r.variant });
             st.itemStatus[r.key] = { status: 'posted', url: out.url };
-            recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posted', url: out.url });
+            recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posted', url: out.url, variant: r.variant });
             log(`posted ${r.kind} reply${r.path ? ` (${r.path}:${r.line ?? '?'})` : ''}`);
             const thread = (st.replyPayload.reviewThreads || []).find((t) => t.id === r.threadId);
             if (r.kind === 'review' && r.resolve === true && thread && thread.viewerCanResolve) {
-              const res = await github.resolveThread({ threadId: r.threadId });
+              // Full arg bag: GitHub resolves by global thread node id and
+              // ignores the rest; GitLab needs repo + MR iid + discussion id.
+              const res = await prov.resolveThread(
+                { repo, pr, threadId: r.threadId, replyToDatabaseId: r.replyToDatabaseId }, onAttempt);
               if (res.ok) {
                 results.resolved.push({ key: r.key, threadId: r.threadId });
                 recordEvent('resolve_item', { key: r.key, status: 'resolved' });
@@ -391,6 +434,8 @@ function createState({ sessionDir, flags = {}, config = {}, github, git, history
         posting: st.posting,
         abortRequested: st.abortRequested,
         noPost: !!flags.noPost,
+        provider: providerName(p),
+        host: providerHost(p),
         repo: p ? p.repo : null,
         pr: p ? p.pr : null,
         config: {

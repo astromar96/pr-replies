@@ -18,6 +18,7 @@
   PRR.help.reply = [
     ['j / k', 'next / previous reply'],
     ['1 / 2', 'set Reply / Skip'],
+    ['v', 'switch reply variant'],
     ['e', 'edit draft'],
     ['t', 'insert a template'],
     ['p', 'toggle markdown preview'],
@@ -68,6 +69,32 @@
     </${Fragment}>`;
   }
 
+  // Claude authors two drafts per item — Direct (fix-plan) and Humanized.
+  // Show both side-by-side; picking one loads it into the editable draft below.
+  // Renders nothing when only one variant exists (back-compat with old payloads).
+  function VariantPicker(props) {
+    const direct = props.item.draft || '';
+    const humanized = props.item.draftHumanized || '';
+    if (!direct || !humanized) return null;
+    const opts = [['direct', 'Direct · fix plan', direct], ['humanized', 'Humanized', humanized]];
+    return html`<${Fragment}>
+      <div className="variants-cap">Pick a reply <span>(then edit below)</span></div>
+      <div className="variants" data-variants=${props.itemKey}>
+        ${opts.map(function (o) {
+          const which = o[0];
+          const active = props.variant === which;
+          function pick() { if (!props.locked) props.onPick(which); }
+          return html`<div key=${which} className=${'variant-card' + (active ? ' active' : '') + (props.locked ? ' disabled' : '')}
+            role="button" tabIndex=${props.locked ? -1 : 0} aria-pressed=${active} data-variant=${which}
+            onClick=${pick} onKeyDown=${function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
+            <div className="variant-label">${o[1]}${active ? html`<span className="variant-on">✓ chosen</span>` : null}</div>
+            <div className="variant-body md" dangerouslySetInnerHTML=${{ __html: PRR.renderMarkdown(o[2]) }} />
+          </div>`;
+        })}
+      </div>
+    </${Fragment}>`;
+  }
+
   function AssigneeMention(props) {
     const key = props.itemKey;
     return html`<div className="assignee"><label>Assign</label>
@@ -99,6 +126,7 @@
       <${FixCommit} commit=${props.fixCommit} fixedIn=${item.fixedIn} />
       <div className="controls">
         <${C.Seg} name=${'seg-' + key} value=${dec.action} options=${SEG_OPTS} disabled=${props.locked} onChange=${props.onAction} />
+        <${VariantPicker} itemKey=${key} item=${item} variant=${dec.variant} locked=${props.locked} onPick=${props.onPickVariant} />
         <${DraftTools} itemKey=${key} draft=${dec.draft} previewOn=${props.previewOn} locked=${props.locked} hint=${hint} onDraft=${props.onDraft} onTab=${props.onTab} />
         ${!isIssue ? html`<div className=${'resolve-row' + (item.viewerCanResolve ? '' : ' disabled')} title=${item.viewerCanResolve ? undefined : 'You cannot resolve this thread (no permission, or the thread is locked)'}>
           <input type="checkbox" data-resolve=${key} checked=${!!dec.resolve && item.viewerCanResolve} disabled=${!item.viewerCanResolve || props.locked}
@@ -146,10 +174,10 @@
       P.reviewThreads.forEach(function (t) {
         const key = PRR.itemKey(t);
         const resolveOn = t.resolveDefault != null ? t.resolveDefault : (!!t.fixedIn && t.viewerCanResolve && autoResolve);
-        d[key] = { action: 'reply', draft: t.draft || '', resolve: !!(resolveOn && t.viewerCanResolve), assignee: '', mention: false };
+        d[key] = { action: 'reply', variant: 'direct', draft: t.draft || t.draftHumanized || '', resolve: !!(resolveOn && t.viewerCanResolve), assignee: '', mention: false };
       });
       P.issueComments.forEach(function (c) {
-        d[PRR.itemKey(c)] = { action: 'reply', draft: c.draft || '', resolve: false, assignee: '', mention: false };
+        d[PRR.itemKey(c)] = { action: 'reply', variant: 'direct', draft: c.draft || c.draftHumanized || '', resolve: false, assignee: '', mention: false };
       });
       return d;
     });
@@ -202,7 +230,7 @@
         const reply = {};
         const cur = stateRef.current.decisions;
         Object.keys(cur).forEach(function (k) {
-          reply[k] = { draft: cur[k].draft, include: cur[k].action === 'reply', resolve: cur[k].resolve, assignee: cur[k].assignee, mention: cur[k].mention };
+          reply[k] = { draft: cur[k].draft, variant: cur[k].variant, include: cur[k].action === 'reply', resolve: cur[k].resolve, assignee: cur[k].assignee, mention: cur[k].mention };
         });
         PRR.store.save({ reply: reply });
         PRR.api.post('data/decisions', { reply: reply }).catch(function () {});
@@ -221,6 +249,7 @@
           if (!s || (st && st.status === 'posted')) return;
           next[it.key] = Object.assign({}, prev[it.key], {
             draft: s.draft != null ? s.draft : prev[it.key].draft,
+            variant: s.variant || prev[it.key].variant,
             action: s.include === false ? 'skip' : 'reply',
             resolve: it.kind === 'review' && it.item.viewerCanResolve ? !!s.resolve : prev[it.key].resolve,
             assignee: s.assignee || prev[it.key].assignee,
@@ -254,6 +283,34 @@
       requestAnimationFrame(function () { try { ta.focus(); ta.selectionStart = ta.selectionEnd = s + text.length; } catch (_) {} });
     }
 
+    function variantSources(item) { return { direct: item.draft || '', humanized: item.draftHumanized || '' }; }
+
+    // Load the chosen variant's text into the editable draft. If the user has
+    // already edited the draft (it matches neither variant's source), confirm
+    // before clobbering — same banner-with-actions idiom as the restore prompt.
+    function pickVariant(key, which) {
+      const cur = stateRef.current;
+      const st = cur.itemStatus[key];
+      if (st && (st.status === 'posted' || st.status === 'interrupted')) return;
+      const it = cur.allItems.find(function (x) { return x.key === key; });
+      if (!it) return;
+      const src = variantSources(it.item);
+      if (!src.direct || !src.humanized) return;
+      const dec = cur.decisions[key];
+      if (dec.variant === which && dec.draft === src[which]) return;
+      const draft = dec.draft || '';
+      const edited = draft.trim() !== '' && draft !== src.direct && draft !== src.humanized;
+      if (edited) {
+        const label = which === 'direct' ? 'Direct' : 'Humanized';
+        const b = PRR.banner('warn', 'Replace your edited draft with the ' + label + ' variant?', [
+          { label: 'Replace', onClick: function () { setItem(key, { variant: which, draft: src[which] }); b.dismiss(); } },
+          { label: 'Keep mine', onClick: function () { b.dismiss(); } },
+        ]);
+        return;
+      }
+      setItem(key, { variant: which, draft: src[which] });
+    }
+
     function submit() {
       const cur = stateRef.current;
       if (cur.posting) return;
@@ -268,7 +325,7 @@
         if (include) {
           const assignee = (cur.decisions[it.key].assignee || '').trim();
           if (assignee && cur.decisions[it.key].mention && body.indexOf('@' + assignee) === -1) body = '@' + assignee + ' ' + body;
-          const r = { kind: it.kind, key: it.key, body: body };
+          const r = { kind: it.kind, key: it.key, body: body, variant: cur.decisions[it.key].variant };
           if (it.kind === 'review') {
             r.threadId = it.item.id; r.replyToDatabaseId = it.item.replyToDatabaseId; r.path = it.item.path; r.line = it.item.line;
             r.resolve = !!cur.decisions[it.key].resolve;
@@ -306,6 +363,14 @@
         'arrowup': function () { ring.move(-1); },
         '1': function () { setFocusedAction('reply'); },
         '2': function () { setFocusedAction('skip'); },
+        'v': function () {
+          const k = focusedKey(); if (!k) return;
+          const it = stateRef.current.allItems.find(function (x) { return x.key === k; });
+          if (!it) return;
+          const src = variantSources(it.item);
+          if (!src.direct || !src.humanized) return;
+          pickVariant(k, stateRef.current.decisions[k].variant === 'direct' ? 'humanized' : 'direct');
+        },
         'e': function () { const k = focusedKey(); if (!k || stateRef.current.preview[k]) return; const el = PRR.cardEl(k); const ta = el && el.querySelector('textarea'); if (ta && !ta.hidden) ta.focus(); },
         'p': function () { const k = focusedKey(); if (k) setPreview(function (prev) { const n = {}; n[k] = !prev[k]; return Object.assign({}, prev, n); }); },
         'x': function () {
@@ -336,6 +401,7 @@
         previewOn=${!!preview[key]} status=${itemStatus[key]} resolveStatus=${live.resolve[key]} fixCommit=${fixCommits[key]}
         locked=${isLocked(key)} focused=${ring.focused === key}
         onAction=${function (a) { setItem(key, { action: a }); }}
+        onPickVariant=${function (which) { pickVariant(key, which); }}
         onDraft=${function (v) { setItem(key, { draft: v }); }}
         onResolve=${function (v) { setItem(key, { resolve: v }); }}
         onAssignee=${function (v) { setItem(key, { assignee: v }); }}

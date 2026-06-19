@@ -2,6 +2,8 @@
   "version": 1,
   "id": "astromar96-demo-repo-pr42-1718500000",
   "repo": "astromar96/demo-repo",
+  "provider": "github",
+  "host": "github.com",
   "pr": 42,
   "prTitle": "Add caching layer",
   "prUrl": "https://github.com/astromar96/demo-repo/pull/42",

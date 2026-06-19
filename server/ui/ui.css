@@ -139,7 +139,7 @@ nav#nav {
 }
 .nav-btn:hover { background: var(--surface-2); color: var(--text-1); }
 
-/* empty states (dashboard / history / templates) */
+/* empty states (history / templates) */
 .empty-state {
   text-align: center; color: var(--text-3);
   border: 1px dashed var(--line); border-radius: 12px;
@@ -149,18 +149,7 @@ nav#nav {
 .empty-state .es-detail { font-size: 13px; line-height: 1.6; }
 .empty-state code { background: var(--surface-2); border-radius: 4px; padding: 1px 6px; font: 12px var(--mono); }
 
-/* dashboard */
-.dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-.pr-tile { margin: 0; padding: 14px; display: flex; flex-direction: column; gap: 7px; }
-.pr-tile:hover { box-shadow: var(--shadow-lift); }
-.pr-tile .pt-top { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.pr-tile .pt-repo { font: 600 12.5px/1.4 var(--mono); color: var(--text-2); }
-.pr-tile .pt-title { font-weight: 600; font-size: 14px; line-height: 1.4; }
-.pr-tile .pt-title a { color: var(--text-1); }
-.pr-tile .pt-title a:hover { color: var(--accent); }
-.pr-tile .pt-meta { color: var(--text-3); font-size: 12px; }
-.pr-tile .pt-actions { margin-top: auto; padding-top: 4px; font-size: 13px; }
-.dash-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* history list */
 .history-row { text-decoration: none; }
 .history-row:hover { background: var(--surface-2); text-decoration: none; }
 .history-row .t-label { color: var(--text-1); }
@@ -368,6 +357,30 @@ details.thread .comment:last-child { border-bottom: none; }
 .sketch { border: 1px dashed var(--accent); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
 .sketch .label { padding: 8px 12px 0; }
 .sketch pre.diff { background: none; }
+
+/* dual reply drafts — pick one, then edit below */
+.variants-cap {
+  font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-3); margin: 10px 0 6px;
+}
+.variants-cap span { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-3); }
+.variants { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.variant-card {
+  border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px;
+  background: var(--surface-0); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease;
+}
+.variant-card:hover { border-color: var(--text-3); }
+.variant-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.variant-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.variant-card.disabled { opacity: .55; cursor: default; }
+.variant-label {
+  font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-3); display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
+}
+.variant-on { color: var(--accent); }
+.variant-body { font-size: 13px; color: var(--text-2); }
+.variant-body :last-child { margin-bottom: 0; }
+@media (max-width: 640px) { .variants { grid-template-columns: 1fr; } }
 
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
 .seg label {

@@ -7,7 +7,7 @@
  * no Claude, no real PR — same dry-run path as scripts/demo.sh) and drives the
  * UI through every phase with Playwright, screenshotting each one. Then boots
  * the hub (`serve --home`) against a seeded config dir and screenshots the
- * Dashboard / History / Templates routes. Use --headed to watch it live.
+ * History / Templates routes. Use --headed to watch it live.
  *
  *   node scripts/ui-preview.js            # headless, writes screenshots
  *   node scripts/ui-preview.js --headed   # visible browser, auto-driven
@@ -200,6 +200,13 @@ async function main() {
     await sleep(pause);
     await shot(page, '03-reply.png');
 
+    // dual reply drafts — pick the Humanized variant on the first card (loads it
+    // into the editable draft). The seeded payload.reply.json carries both drafts.
+    await page.waitForSelector('.card[data-card] .variants .variant-card', { timeout: 10000 });
+    await page.locator('.card[data-card]').first().locator('.variant-card[data-variant="humanized"]').click();
+    await sleep(pause);
+    await shot(page, '03d-reply-variants.png');
+
     // assignee + opt-in @-mention on the first reply
     await page.fill('.card[data-card] input[data-assignee]', 'alice');
     await page.check('.card[data-card] input[data-mention]');
@@ -235,30 +242,26 @@ async function main() {
     await shot(page, '04-done.png');
 
     // The session has now written a history record into configDir. Stop it so
-    // the hub's dashboard shows it as a finished session.
+    // the hub's history list shows it as a finished session.
     runCli(['stop', '--session', session], { quiet: true, allowFail: true, env });
     await sleep(300);
 
     // ---- hub (serve --home) ----
-    process.stderr.write('hub: dashboard / history / templates\n');
+    process.stderr.write('hub: history / templates\n');
     homeServer = spawn('node', [SRV, 'serve', '--home', '--no-open', '--repo-dir', ROOT], { stdio: ['ignore', 'ignore', 'inherit'], env });
     const home = await waitForFile(path.join(configDir, 'home.json'), (h) => h.url);
 
-    await page.goto(home.url + '#/dashboard', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#dash-body .summary-list, #dash-body .empty-state, #dash-body .dash-actions', { timeout: 15000 });
-    await sleep(pause);
-    await shot(page, '05-dashboard.png');
-
-    // dark theme (driven exactly as the harness drives toggleHelp)
-    await page.evaluate(() => window.PRR.theme.set('dark'));
-    await sleep(pause);
-    await shot(page, '00-dashboard-dark.png');
-    await page.evaluate(() => window.PRR.theme.set('system'));
-
+    // The hub lands on History.
     await page.goto(home.url + '#/history', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.history-row, .empty-state', { timeout: 15000 });
     await sleep(pause);
     await shot(page, '06-history.png');
+
+    // dark theme (driven exactly as the harness drives toggleHelp)
+    await page.evaluate(() => window.PRR.theme.set('dark'));
+    await sleep(pause);
+    await shot(page, '00-history-dark.png');
+    await page.evaluate(() => window.PRR.theme.set('system'));
 
     const firstRow = page.locator('.history-row').first();
     if (await firstRow.count()) {

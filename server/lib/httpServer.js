@@ -91,9 +91,7 @@ function createApp({ state = null, data = null, snapshot = null, token, html, on
 
   async function handleDataGet(res, sub, query) {
     if (!data) return respond(res, 404, 'text/plain', 'not found');
-    if (sub === 'data/dashboard') return respondJson(res, 200, await data.dashboard({ prs: query.get('prs') === '1' }));
     if (sub === 'data/sessions') return respondJson(res, 200, { sessions: data.sessions() });
-    if (sub === 'data/prs') return respondJson(res, 200, await data.prs(true));
     if (sub === 'data/history') return respondJson(res, 200, { history: data.history() });
     if (sub === 'data/templates') return respondJson(res, 200, { templates: data.templates() });
     if (sub.startsWith('data/history/')) {

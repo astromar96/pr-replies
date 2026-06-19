@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { validateTriagePayload, validateReplyPayload, validateTemplates } = require('../server/lib/schema');
 
 // ---------- fixtures ----------
@@ -173,6 +175,65 @@ test('schema: validateTemplates flags missing fields, bad scope, and duplicate i
     { id: 'dup', name: 'A', body: 'a' }, { id: 'dup', name: 'B', body: 'b' },
   ] });
   assert.ok(hasErrorAt(e3, 'templates[1].id'), e3.join('; '));
+});
+
+// ---------- provider / host (backward-compatible additions) ----------
+test('schema: provider/host are optional — absent ⇒ valid (GitHub back-compat)', () => {
+  const p = triagePayload();
+  assert.equal(p.provider, undefined);
+  assert.deepEqual(validateTriagePayload(p), []);
+});
+
+test('schema: provider:gitlab + repo.host validates', () => {
+  const t = triagePayload();
+  t.provider = 'gitlab';
+  t.repo.host = 'gitlab.com';
+  assert.deepEqual(validateTriagePayload(t), []);
+
+  const r = replyPayload();
+  r.provider = 'gitlab';
+  r.repo.host = 'gl.acme.dev';
+  assert.deepEqual(validateReplyPayload(r), []);
+});
+
+test('schema: an unknown provider and a non-string host are flagged', () => {
+  const t = triagePayload();
+  t.provider = 'bitbucket';
+  t.repo.host = 7;
+  const errors = validateTriagePayload(t);
+  assert.ok(hasErrorAt(errors, 'provider'), errors.join('; '));
+  assert.ok(hasErrorAt(errors, 'repo.host'), errors.join('; '));
+});
+
+test('schema: the GitLab example payloads validate', () => {
+  const dir = path.join(__dirname, '..', 'examples');
+  const triage = JSON.parse(fs.readFileSync(path.join(dir, 'payload.triage.gitlab.json'), 'utf8'));
+  const reply = JSON.parse(fs.readFileSync(path.join(dir, 'payload.reply.gitlab.json'), 'utf8'));
+  assert.deepEqual(validateTriagePayload(triage), []);
+  assert.deepEqual(validateReplyPayload(reply), []);
+});
+
+// ---------- dual reply drafts (direct + humanized) ----------
+test('schema: reply payload accepts an optional draftHumanized on both item types', () => {
+  const p = replyPayload();
+  p.reviewThreads[0].draftHumanized = 'Nice catch — fixed it!';
+  p.issueComments[0].draftHumanized = 'On it — done!';
+  assert.deepEqual(validateReplyPayload(p), []);
+});
+
+test('schema: a draft-only reply payload (no draftHumanized) still validates', () => {
+  const p = replyPayload();
+  for (const t of p.reviewThreads) assert.equal(t.draftHumanized, undefined);
+  assert.deepEqual(validateReplyPayload(p), []);
+});
+
+test('schema: a non-string draftHumanized is flagged on both item types', () => {
+  const p = replyPayload();
+  p.reviewThreads[0].draftHumanized = 7;
+  p.issueComments[0].draftHumanized = {};
+  const errors = validateReplyPayload(p);
+  assert.ok(hasErrorAt(errors, 'reviewThreads[0].draftHumanized'), errors.join('; '));
+  assert.ok(hasErrorAt(errors, 'issueComments[0].draftHumanized'), errors.join('; '));
 });
 
 // ---------- reviewer routing (backward-compatible additions) ----------
