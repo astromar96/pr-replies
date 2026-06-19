@@ -8,7 +8,12 @@
     "test": "node --test test/*.test.js",
     "ui:preview": "node scripts/ui-preview.js",
     "ui:preview:headed": "node scripts/ui-preview.js --headed",
-    "home": "node server/server.js serve --home"
+    "home": "node server/server.js serve --home",
+    "sync:version": "node scripts/sync-version.js",
+    "check:version": "node scripts/check-version.js",
+    "preversion": "npm test",
+    "version": "npm run sync:version && git add .claude-plugin/plugin.json",
+    "postversion": "git push --follow-tags"
   },
   "devDependencies": {
     "playwright": "^1.48.0"
