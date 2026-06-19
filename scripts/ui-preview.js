@@ -137,9 +137,29 @@ async function main() {
   let browser;
   let homeServer = null;
   const saved = [];
-  async function shot(page, name) {
+
+  // On tall pages the fixed bottom action bar paints at the first viewport's
+  // bottom — i.e. mid-page in a full-page screenshot, overlapping the content
+  // behind it. For those shots (`{ tight: true }`) we briefly un-stick the
+  // footer so it flows to the true end of the document, and trim the padding
+  // the layout reserves for it. Short pages keep the pinned footer (it reads as
+  // the normal app chrome), so they pass no option.
+  const TIGHT_CSS = 'footer{position:static!important;box-shadow:none!important}.wrap{padding-bottom:28px!important}';
+  async function setTight(page, on) {
+    await page.evaluate(({ css, on }) => {
+      let el = document.getElementById('__shot_tight');
+      if (on) {
+        if (!el) { el = document.createElement('style'); el.id = '__shot_tight'; document.head.appendChild(el); }
+        el.textContent = css;
+      } else if (el) { el.remove(); }
+    }, { css: TIGHT_CSS, on });
+  }
+
+  async function shot(page, name, opts = {}) {
+    if (opts.tight) await setTight(page, true);
     const file = path.join(args.out, name);
     await page.screenshot({ path: file, fullPage: true });
+    if (opts.tight) await setTight(page, false);
     saved.push(name);
     process.stderr.write(`  saved ${path.relative(ROOT, file)}\n`);
     if (dwellMs) await sleep(dwellMs);
@@ -161,13 +181,13 @@ async function main() {
     await page.waitForSelector('.view header h1', { timeout: 15000 });
     await page.waitForSelector('#submit');
     await sleep(pause);
-    await shot(page, '01-triage.png');
+    await shot(page, '01-triage.png', { tight: true });
 
     // keyboard-shortcut help overlay
     await page.evaluate(() => window.PRR.app.toggleHelp('triage'));
     await page.waitForSelector('#help:not([hidden]) .help-card');
     await sleep(pause);
-    await shot(page, '01b-triage-help.png');
+    await shot(page, '01b-triage-help.png', { tight: true });
     await page.evaluate(() => window.PRR.app.toggleHelp(false));
     await page.waitForSelector('#help', { state: 'hidden' });
 
@@ -176,7 +196,7 @@ async function main() {
     await page.waitForSelector('.reviewer-group', { timeout: 10000 });
     await page.fill('.card[data-card] input[data-assignee]', 'alice');
     await sleep(pause);
-    await shot(page, '01c-triage-grouped-by-reviewer.png');
+    await shot(page, '01c-triage-grouped-by-reviewer.png', { tight: true });
 
     // ---- submit triage -> fixing ----
     await page.click('#submit');
@@ -198,20 +218,20 @@ async function main() {
     process.stderr.write('phase: reply\n');
     await page.waitForSelector('.card .draft-tools', { timeout: 15000 });
     await sleep(pause);
-    await shot(page, '03-reply.png');
+    await shot(page, '03-reply.png', { tight: true });
 
     // dual reply drafts — pick the Humanized variant on the first card (loads it
     // into the editable draft). The seeded payload.reply.json carries both drafts.
     await page.waitForSelector('.card[data-card] .variants .variant-card', { timeout: 10000 });
     await page.locator('.card[data-card]').first().locator('.variant-card[data-variant="humanized"]').click();
     await sleep(pause);
-    await shot(page, '03d-reply-variants.png');
+    await shot(page, '03d-reply-variants.png', { tight: true });
 
     // assignee + opt-in @-mention on the first reply
     await page.fill('.card[data-card] input[data-assignee]', 'alice');
     await page.check('.card[data-card] input[data-mention]');
     await sleep(pause);
-    await shot(page, '03c-reply-assignee.png');
+    await shot(page, '03c-reply-assignee.png', { tight: true });
 
     // insert-template picker (move focus out of the assignee input first — the
     // keyboard layer ignores shortcuts while a field is focused, by design)
@@ -220,7 +240,7 @@ async function main() {
     await page.keyboard.press('t');
     await page.waitForSelector('.insert-picker .insert-row', { timeout: 10000 });
     await sleep(pause);
-    await shot(page, '07b-template-insert.png');
+    await shot(page, '07b-template-insert.png', { tight: true });
     await page.keyboard.press('Escape');
     await page.waitForSelector('.insert-picker', { state: 'detached' });
 
@@ -228,7 +248,7 @@ async function main() {
     await page.locator('.draft-tools button[data-tab="preview"]').first().click();
     await page.waitForSelector('.preview:not([hidden])');
     await sleep(pause);
-    await shot(page, '03b-reply-preview.png');
+    await shot(page, '03b-reply-preview.png', { tight: true });
 
     // stop the done view from auto-closing before we can screenshot it
     const autoclose = page.locator('#autoclose');
