@@ -5,17 +5,18 @@
 **Turn GitHub PR & GitLab MR review feedback into one live, keyboard-first browser session — triage, fix, and reply, without the terminal back-and-forth.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)
+![Claude Code + Codex](https://img.shields.io/badge/Claude%20Code%20%2B%20Codex-supported-8A63D2)
 ![GitHub + GitLab](https://img.shields.io/badge/GitHub%20%2B%20GitLab-supported-2da44e)
 ![Node 18+](https://img.shields.io/badge/node-18%2B-339933)
 ![Zero build · zero deps](https://img.shields.io/badge/build-none-lightgrey)
 
 </div>
 
-A [Claude Code](https://code.claude.com) plugin. Point it at an open **GitHub pull
-request** or **GitLab merge request** and it opens a **single browser tab** that
-walks you through the whole loop: triage every comment, watch Claude implement
-the approved fixes live, then pick and edit replies and post them.
+Drives your coding agent — [Claude Code](https://code.claude.com) or
+[OpenAI Codex](https://developers.openai.com/codex). Point it at an open **GitHub
+pull request** or **GitLab merge request** and it opens a **single browser tab**
+that walks you through the whole loop: triage every comment, watch the agent
+implement the approved fixes live, then pick and edit replies and post them.
 
 Everything runs locally on `127.0.0.1` behind a random URL token. The only network
 calls are the `gh` / `glab` CLI talking to GitHub/GitLab with the auth you already
@@ -26,10 +27,11 @@ have — **the tool never sees, handles, or stores a token.**
 ## Highlights
 
 - **One browser session for the whole loop** — triage → fix → reply, in a single tab.
-- **AI triage you stay in control of** — Claude proposes a per-comment plan with a **confidence badge** and, for high-confidence fixes, a **sketched diff**. You pick **Fix / Reply only / Skip**, informed by your repo's history of what you've fixed vs. replied to.
+- **AI triage you stay in control of** — the agent proposes a per-comment plan with a **confidence badge** and, for high-confidence fixes, a **sketched diff**. You pick **Fix / Reply only / Skip**, informed by your repo's history of what you've fixed vs. replied to.
 - **Live fix progress** — per-fix status, test checks, commit SHAs, and the push, streamed in real time, with an **Abort** at any point.
 - **Dual reply drafts** — a **Direct / fix-plan** and a warmer **Humanized** draft, side by side; pick one and tweak it.
-- **Real diffs, not hallucinations** — each reply shows the **actual fix commit diff read from git**, not from Claude's memory.
+- **Real diffs, not hallucinations** — each reply shows the **actual fix commit diff read from git**, not from the model's memory.
+- **Agent-agnostic** — runs under **Claude Code** (plugin) or **OpenAI Codex** (skill) off one shared, zero-dependency core.
 - **Keyboard-first** — `j`/`k`, `1`/`2`/`3`, `⌘↩`, with filtering, batch actions, and file/reviewer grouping for big PRs.
 - **Team-friendly, still local** — assign comments to teammates, optional @-mentions, a **History** audit log, and reusable **reply templates**.
 - **Light / dark / system** theme, and edits that survive refreshes, timeouts, and even a server restart.
@@ -40,7 +42,7 @@ have — **the tool never sees, handles, or stores a token.**
 
 ### 1 · Triage
 
-Claude fetches the unresolved review threads / MR discussions plus general
+The agent fetches the unresolved review threads / MR discussions plus general
 comments, reads your code, and proposes a plan per comment — each with a
 **confidence badge** and, for high-confidence fixes, a **sketched diff** (marked
 *not yet applied*). Choose **Fix / Reply only / Skip**, filter, run batch actions,
@@ -60,7 +62,7 @@ reviewer to route comments to teammates:
 
 ### 2 · Fix (live)
 
-The same tab switches to a progress view while Claude implements the approved
+The same tab switches to a progress view while the agent implements the approved
 fixes: per-fix status, test checks, commit SHAs, and the push, **streamed live**.
 **Abort** hands control back at any point — keep the tab open; replies come next.
 
@@ -68,8 +70,8 @@ fixes: per-fix status, test checks, commit SHAs, and the push, **streamed live**
 
 ### 3 · Reply
 
-Claude writes **two variants per comment** — a **Direct / fix-plan** draft and a
-warmer **Humanized** one — shown side by side. Pick one (`v` toggles), tweak it,
+The agent writes **two variants per comment** — a **Direct / fix-plan** draft and
+a warmer **Humanized** one — shown side by side. Pick one (`v` toggles), tweak it,
 and review the **actual fix commit diff** (read from git) with a markdown-preview
 toggle and a **Resolve thread** checkbox.
 
@@ -83,7 +85,7 @@ failures stay on screen with **Retry failed / Finish anyway**.
 
 ### Done
 
-A summary of what was posted, resolved, and fixed — then back to your Claude
+A summary of what was posted, resolved, and fixed — then back to your agent
 session for the recap.
 
 ![Done summary](docs/screenshots/done.png)
@@ -126,10 +128,25 @@ gitlab.com or any `gitlab.*` host → GitLab); override with `--provider` / `--h
 
 ## Install
 
+**Claude Code** (plugin):
+
 ```
 /plugin marketplace add astromar96/pr-replies
 /plugin install pr-replies@pr-replies
 ```
+
+**OpenAI Codex** (skill) — clone the repo, then install the skills into
+`~/.agents/skills`:
+
+```
+git clone https://github.com/astromar96/pr-replies
+node pr-replies/scripts/install-codex.js
+```
+
+This bakes the checkout's path into the installed skills, so `/pr-replies` works
+from any repo. Keep the clone in place (or set `PR_REPLIES_HOME` to its path);
+re-run the installer after `git pull`. Invoke it in Codex with `$pr-replies` /
+`$pr-dashboard`, via `/skills`, or just ask Codex to reply to your PR's comments.
 
 ## Usage
 
@@ -183,17 +200,19 @@ Shortcuts are ignored while a text field is focused, by design.
   "sessionTimeoutMins": 120,
   "waitTimeoutSecs": 540,
   "historyMax": 200,
-  "theme": "system"
+  "theme": "system",
+  "agentLabel": null
 }
 ```
 
 - `signature` — appended to every posted reply (the UI shows a note).
-- `defaultTriageAction` — preselected action when Claude has no suggestion (`"fix"` / `"reply"` / `"skip"`).
+- `defaultTriageAction` — preselected action when the agent has no suggestion (`"fix"` / `"reply"` / `"skip"`).
 - `autoResolveFixedThreads` — pre-tick "Resolve thread" on fixed threads you can resolve.
 - `sessionTimeoutMins` — how long the background session server lives without finishing.
 - `waitTimeoutSecs` — default window for each blocking `wait` call.
 - `historyMax` — how many session records to keep (oldest pruned; cap 2000).
 - `theme` — `"light"` / `"dark"` / `"system"`; the in-browser toggle overrides this per browser.
+- `agentLabel` — name shown in the UI for the agent driving the session (e.g. `"Codex"`, `"Claude"`); `null` shows the neutral "the agent".
 
 Set `PR_REPLIES_CONFIG_DIR` to relocate config, history, and templates (the test
 suite and UI preview use it so they never touch your real files).
@@ -208,7 +227,7 @@ suite and UI preview use it so they never touch your real files).
 ## How it works
 
 ```
-Claude (skill)                       server (background)                browser (one tab)
+agent (command/skill)                server (background)                browser (one tab)
 write triage.payload.json
 serve --session DIR  ──────────────▶ boots, opens /{token}/       ◀──▶  triage view
 wait --phase triage  (blocks)        user submits → phase=fixing  ───▶  progress view
@@ -219,7 +238,7 @@ wait --phase reply   (blocks)        posts via gh/glab (retry+resolve) ▶  per-
 stop --session DIR
 ```
 
-- **The skill drives the flow.** `commands/pr-replies.md` walks Claude through each step (Step 0 detects the provider; later steps branch between `gh` and `glab`); `commands/pr-dashboard.md` launches the hub.
+- **The workflow drives the flow.** A single agent-neutral source in `src/agent/` walks the agent through each step (Step 0 detects the provider; later steps branch between `gh` and `glab`); `npm run build:agents` generates both the Claude Code command (`commands/*.md`) and the Codex skill (`.agents/skills/*/SKILL.md`) from it, so the two runners never drift.
 - **Provider-agnostic core.** Backends in `server/lib/providers/` sit behind a `createProvider` factory — `github.js` (`gh`) and `gitlab.js` (`glab`, REST-only) share a retry kernel and expose one interface (`postReviewReply` / `postIssueComment` / `resolveThread` / `listPrs`).
 - **Zero-dependency server.** `server/server.js` is a CLI (`serve` / `wait` / `emit` / `advance` / `stop`, plus a read-only `suggest`) over stdlib libs. A session state machine (`triage → fixing → reply → done|cancelled`) persists everything atomically under `/tmp/pr-replies/`; `events.jsonl` doubles as the SSE replay log, so a refresh never loses state. `serve --home` is the same server with no session — a read-only data plane for history and templates.
 - **No build step.** `server/ui/` is a React single page: vendored React + [htm](https://github.com/developit/htm) and the app modules are concatenated into one inline `<script>` at serve time, so there's nothing to compile or install.
@@ -227,22 +246,32 @@ stop --session DIR
 
 ## Timeouts & resume
 
-Each `wait` blocks for up to 9 minutes (under Claude Code's 10-minute Bash limit),
-but the session doesn't end with it — Claude just re-runs `wait`, untouched. The
-server itself lives for `sessionTimeoutMins` (default 2 h); if it dies, Claude
-relaunches with `serve --resume`, rebuilding state from the session dir (posted
-replies stay locked) and restoring your in-browser edits from localStorage.
+Each `wait` blocks for up to 9 minutes (under a typical ~10-minute per-command
+ceiling), but the session doesn't end with it — the agent just re-runs `wait`,
+untouched. The server itself lives for `sessionTimeoutMins` (default 2 h); if it
+dies, the agent relaunches with `serve --resume`, rebuilding state from the
+session dir (posted replies stay locked) and restoring your in-browser edits
+from localStorage.
 
 ## Development
 
 ```
 git clone https://github.com/astromar96/pr-replies
-claude --plugin-dir ./pr-replies
+claude --plugin-dir ./pr-replies          # Claude Code
+node ./pr-replies/scripts/install-codex.js # OpenAI Codex
 
 npm test          # Node's built-in runner (no network needed)
 ```
 
-Drive the full UI without GitHub or Claude:
+The Claude command (`commands/*.md`) and Codex skill (`.agents/skills/*/SKILL.md`)
+are **generated** from `src/agent/*.workflow.md` — edit the source, then:
+
+```
+npm run build:agents   # regenerate both runners
+npm run check:agents   # CI guard: fail if a generated file drifts from its source
+```
+
+Drive the full UI without GitHub or an agent:
 
 ```
 scripts/demo.sh              # triage → scripted fix progress → dry-run replies

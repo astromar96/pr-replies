@@ -4,7 +4,7 @@
  * Visual UI preview + integration gate.
  *
  * Boots the real session server with the bundled example payloads (no GitHub,
- * no Claude, no real PR — same dry-run path as scripts/demo.sh) and drives the
+ * no agent, no real PR — same dry-run path as scripts/demo.sh) and drives the
  * UI through every phase with Playwright, screenshotting each one. Then boots
  * the hub (`serve --home`) against a seeded config dir and screenshots the
  * History / Templates routes. Use --headed to watch it live.

@@ -53,11 +53,11 @@
       ${(!isIssue && item.diffHunk) ? html`<details className="hunk" open><summary>diff context</summary><${C.Diff} text=${item.diffHunk} /></details>` : null}
       <${C.Comments} snapshot=${props.snapshot} comments=${isIssue ? [item] : item.comments} />
       <div className="controls">
-        ${item.fixPlan ? html`<div className="fixplan"><span className="label">Claude’s proposed fix</span><${C.Md} src=${item.fixPlan} /></div>` : null}
-        ${item.proposedDiff ? html`<div className="sketch"><span className="label">Claude’s sketch — not yet applied</span><${C.Diff} text=${item.proposedDiff} /></div>` : null}
+        ${item.fixPlan ? html`<div className="fixplan"><span className="label">${PRR.agentRefCap(props.snapshot)}’s proposed fix</span><${C.Md} src=${item.fixPlan} /></div>` : null}
+        ${item.proposedDiff ? html`<div className="sketch"><span className="label">${PRR.agentRefCap(props.snapshot)}’s sketch — not yet applied</span><${C.Diff} text=${item.proposedDiff} /></div>` : null}
         <${C.Seg} name=${'seg-' + key} value=${dec.action} options=${SEG_OPTS} onChange=${props.onAction} />
-        <textarea data-guidance=${key} value=${dec.guidance} aria-label="Guidance for Claude"
-          placeholder="Optional guidance for Claude (how to fix, what to say…)"
+        <textarea data-guidance=${key} value=${dec.guidance} aria-label=${'Guidance for ' + PRR.agentRef(props.snapshot)}
+          placeholder=${'Optional guidance for ' + PRR.agentRef(props.snapshot) + ' (how to fix, what to say…)'}
           onChange=${function (e) { props.onGuidance(e.target.value); }} />
         <div className="assignee"><label>Assign</label>
           <input list="prr-assignees" data-assignee=${key} value=${dec.assignee} placeholder="teammate (optional)" aria-label="Assign to teammate"
@@ -216,7 +216,7 @@
         return n;
       });
       const parts = ['fix', 'reply', 'skip'].filter(function (a) { return counts[a]; }).map(function (a) { return counts[a] + ' ' + a; });
-      flashBatch('✓ Reset to Claude’s suggestions · ' + (parts.join(' · ') || 'nothing to apply'));
+      flashBatch('✓ Reset to ' + PRR.agentRef(snapshot) + '’s suggestions · ' + (parts.join(' · ') || 'nothing to apply'));
     }
     function skipOutdated() {
       const n = allItems.filter(function (it) { return it.kind === 'review' && it.item.isOutdated; }).length;
@@ -286,7 +286,7 @@
       <h1><a href=${P.pr.url} target="_blank" rel="noopener">${P.pr.title}</a></h1>
       <div className="sub"><a href=${P.pr.url} target="_blank" rel="noopener">${P.repo.nameWithOwner}#${P.pr.number}</a> by ${P.pr.author}
         ${' · '}${PRR.plural(P.reviewThreads.length, 'review thread')}${' · '}${PRR.plural(P.issueComments.length, 'general comment')}
-        ${' · '}<b>choose what Claude should do</b>${' · '}<kbd>?</kbd> shortcuts</div>
+        ${' · '}<b>choose what ${PRR.agentRef(snapshot)} should do</b>${' · '}<kbd>?</kbd> shortcuts</div>
     </header>`;
 
     const toolbar = html`<div className="toolbar">

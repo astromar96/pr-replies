@@ -20,11 +20,15 @@ const DEFAULTS = {
   waitTimeoutSecs: 540,
   historyMax: 200,
   theme: 'system',
+  // Display name of the coding agent driving the session (e.g. "Codex",
+  // "Claude"). null → the UI falls back to the neutral "the agent".
+  agentLabel: null,
 };
 
 const TRIAGE_ACTIONS = [null, 'fix', 'reply', 'skip'];
 const THEMES = ['light', 'dark', 'system'];
 const MAX_SIGNATURE_CHARS = 500;
+const MAX_AGENT_LABEL_CHARS = 40;
 const MAX_SESSION_TIMEOUT_MINS = 1440;
 // 3540s = 59 min: stays under typical 1h tool-call ceilings.
 const MAX_WAIT_TIMEOUT_SECS = 3540;
@@ -109,6 +113,18 @@ function loadConfig({ configPath = CONFIG_PATH } = {}) {
           warnings.push('config: theme must be "light", "dark", or "system"; using default');
         } else {
           config.theme = value;
+        }
+        break;
+      case 'agentLabel':
+        if (value === null) {
+          config.agentLabel = null;
+        } else if (typeof value !== 'string') {
+          warnings.push('config: agentLabel must be a string or null; using default');
+        } else if (value.length > MAX_AGENT_LABEL_CHARS) {
+          warnings.push(`config: agentLabel exceeds ${MAX_AGENT_LABEL_CHARS} characters; using default`);
+        } else {
+          const trimmed = value.trim();
+          config.agentLabel = trimmed || null;
         }
         break;
     }

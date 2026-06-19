@@ -40,7 +40,7 @@
 
     const body = html`<div className="view">
       <header><h1>${cancelled ? (timedOut ? 'Session timed out' : 'Session cancelled') : 'All done'}</h1>
-        <div className="sub"><b>${snapshot.repo ? snapshot.repo.nameWithOwner : ''}#${snapshot.pr ? snapshot.pr.number : ''}</b> · return to the Claude session for the summary</div>
+        <div className="sub"><b>${snapshot.repo ? snapshot.repo.nameWithOwner : ''}#${snapshot.pr ? snapshot.pr.number : ''}</b> · return to ${PRR.agentRef(snapshot)}'s session for the summary</div>
       </header>
       <${C.Summary}
         cancelled=${cancelled}

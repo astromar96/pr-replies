@@ -2,7 +2,7 @@
 
 /**
  * Session directory layer. The server is the single writer of everything in
- * the session dir except the two payload files (written by Claude and read
+ * the session dir except the two payload files (written by the agent and read
  * only on explicit triggers — serve boot / advance — never watched).
  *
  * All JSON goes through write-to-tmp + rename so readers (`wait` polling for

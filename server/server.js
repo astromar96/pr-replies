@@ -180,6 +180,7 @@ async function cmdServeHome(flags) {
     autoResolveFixedThreads: config.autoResolveFixedThreads !== false,
     defaultTriageAction: config.defaultTriageAction || null,
     theme: config.theme || 'system',
+    agentLabel: config.agentLabel || null,
   };
   const html = buildHtml();
   const token = crypto.randomBytes(16).toString('hex');

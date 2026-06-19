@@ -26,6 +26,7 @@ jobs:
       - name: Verify tag matches manifest version
         run: |
           npm run check:version
+          npm run check:agents
           tag="${GITHUB_REF_NAME#v}"
           pkg="$(node -p "require('./package.json').version")"
           if [ "$tag" != "$pkg" ]; then

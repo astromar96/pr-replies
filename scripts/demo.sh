@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full no-GitHub/no-Claude dry run of the v2 session protocol, mirroring the
+# Full no-GitHub/no-agent dry run of the v2 session protocol, mirroring the
 # skill: serve in background, wait for triage, scripted emit sequence (watch
 # the progress view live), advance to reply, dry-run posting.
 #

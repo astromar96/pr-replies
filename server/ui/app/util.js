@@ -22,6 +22,17 @@
     return d + 'd ago';
   };
 
+  // The display name of the coding agent driving the session. Returns the
+  // configured label (e.g. "Codex") or the neutral fallback "the agent". Use
+  // agentRef in object/possessive positions ("Guidance for {ref}", "{ref}'s
+  // sketch") and agentRefCap at the start of a sentence ("{Cap} is working").
+  PRR.agentRef = function (snapshot) {
+    return (snapshot && snapshot.config && snapshot.config.agentLabel) || 'the agent';
+  };
+  PRR.agentRefCap = function (snapshot) {
+    return (snapshot && snapshot.config && snapshot.config.agentLabel) || 'The agent';
+  };
+
   PRR.plural = function (n, word) {
     if (n === 1) return n + ' ' + word;
     var plural;

@@ -1,7 +1,6 @@
 ---
+name: pr-dashboard
 description: Open the pr-replies hub — session history and reply templates — in your browser
-argument-hint: ""
-allowed-tools: Bash(node:*), Bash(cat:*), Bash(ls:*), Read
 ---
 
 <!-- GENERATED FILE — edit src/agent/pr-dashboard.workflow.md and run
@@ -29,7 +28,7 @@ e.g. `nohup … &`). Pass `--repo-dir "$PWD"` so the Templates view merges this
 repo's local templates (`.pr-replies/templates.json`) on top of the user's:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" serve --home --repo-dir "$PWD"
+node "${PR_REPLIES_HOME}/server/server.js" serve --home --repo-dir "$PWD"
 ```
 
 The hub picks a random loopback port, writes `home.json`, opens the browser

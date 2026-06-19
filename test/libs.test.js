@@ -164,6 +164,7 @@ test('config: CONFIG_PATH and DEFAULTS shape', () => {
     waitTimeoutSecs: 540,
     historyMax: 200,
     theme: 'system',
+    agentLabel: null,
   });
 });
 
@@ -263,10 +264,35 @@ test('config: valid full file round-trips with no warnings', () => {
     waitTimeoutSecs: 300,
     historyMax: 50,
     theme: 'dark',
+    agentLabel: 'Codex',
   };
   const { config, warnings } = loadConfig({ configPath: writeConfig(JSON.stringify(full)) });
   assert.deepEqual(config, full);
   assert.deepEqual(warnings, []);
+});
+
+test('config: agentLabel accepts a string or null, trims, caps, and rejects non-strings', () => {
+  const ok = loadConfig({ configPath: writeConfig(JSON.stringify({ agentLabel: '  Codex  ' })) });
+  assert.equal(ok.config.agentLabel, 'Codex');
+  assert.deepEqual(ok.warnings, []);
+
+  const empty = loadConfig({ configPath: writeConfig(JSON.stringify({ agentLabel: '   ' })) });
+  assert.equal(empty.config.agentLabel, null);
+  assert.deepEqual(empty.warnings, []);
+
+  const nulled = loadConfig({ configPath: writeConfig(JSON.stringify({ agentLabel: null })) });
+  assert.equal(nulled.config.agentLabel, null);
+  assert.deepEqual(nulled.warnings, []);
+
+  const tooLong = loadConfig({ configPath: writeConfig(JSON.stringify({ agentLabel: 'x'.repeat(41) })) });
+  assert.equal(tooLong.config.agentLabel, null);
+  assert.equal(tooLong.warnings.length, 1);
+  assert.match(tooLong.warnings[0], /^config: agentLabel/);
+
+  const bad = loadConfig({ configPath: writeConfig(JSON.stringify({ agentLabel: 7 })) });
+  assert.equal(bad.config.agentLabel, null);
+  assert.equal(bad.warnings.length, 1);
+  assert.match(bad.warnings[0], /^config: agentLabel/);
 });
 
 test('config: historyMax validated and capped at 2000; theme validated', () => {

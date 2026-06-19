@@ -1,5 +1,5 @@
 'use strict';
-/* Progress view (phase: fixing) — live timeline while Claude implements the
+/* Progress view (phase: fixing) — live timeline while the agent implements the
  * approved fixes. The model is derived purely from the event store (seeded from
  * events.jsonl + live SSE), so a refresh or reconnect is lossless. */
 (function () {
@@ -121,10 +121,10 @@
     const body = html`<div className="view">
       <header><h1>Implementing fixes…</h1>
         <div className="sub"><b>${snapshot.repo ? snapshot.repo.nameWithOwner : ''}#${snapshot.pr ? snapshot.pr.number : ''}</b>
-          ${' · '}Claude is working on ${PRR.plural(fixCount, 'approved fix')}${replyOnly ? ' · ' + PRR.plural(replyOnly, 'reply-only item') + ' will be drafted after' : ''}</div>
+          ${' · '}${PRR.agentRefCap(snapshot)} is working on ${PRR.plural(fixCount, 'approved fix')}${replyOnly ? ' · ' + PRR.plural(replyOnly, 'reply-only item') + ' will be drafted after' : ''}</div>
       </header>
       <${Timeline} model=${model} />
-      <div id="stall">${stalled ? html`<div className="banner warn stall-hint">No activity for a few minutes. Check the Claude session — if it stopped, re-run <code>/pr-replies</code> to resume, or abort the remaining fixes above.</div>` : null}</div>
+      <div id="stall">${stalled ? html`<div className="banner warn stall-hint">No activity for a few minutes. Check ${PRR.agentRef(snapshot)}'s session — if it stopped, re-run <code>/pr-replies</code> to resume, or abort the remaining fixes above.</div>` : null}</div>
     </div>`;
 
     const footer = html`<${Fragment}>

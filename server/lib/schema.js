@@ -73,8 +73,8 @@ function checkThreadCore(errors, where, t) {
   if (typeof t.isOutdated !== 'boolean') err(errors, `${where}.isOutdated`, 'missing boolean');
   if (typeof t.viewerCanResolve !== 'boolean') err(errors, `${where}.viewerCanResolve`, 'missing boolean');
   checkString(errors, `${where}.assignee`, t.assignee, { optional: true });
-  // A free-form classification (e.g. "tests", "error-handling") Claude may tag
-  // for the learning loop; persisted into history for `suggest` priors.
+  // A free-form classification (e.g. "tests", "error-handling") the agent may
+  // tag for the learning loop; persisted into history for `suggest` priors.
   checkString(errors, `${where}.category`, t.category, { optional: true });
   checkComments(errors, where, t.comments);
 }

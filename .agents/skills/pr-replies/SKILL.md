@@ -1,7 +1,6 @@
 ---
+name: pr-replies
 description: Triage, fix, and reply to GitHub PR or GitLab MR comments in a live browser session
-argument-hint: "[pr-or-mr-number-or-url] [--no-fix] [--allow-cross-repo] [--dry-run] [--provider github|gitlab] [--host HOST]"
-allowed-tools: Bash(gh:*), Bash(glab:*), Bash(git:*), Bash(node:*), Bash(rm:*), Bash(date:*), Bash(mkdir:*), Bash(ls:*), Read, Grep, Glob, Edit, Write
 ---
 
 <!-- GENERATED FILE — edit src/agent/pr-replies.workflow.md and run
@@ -31,7 +30,7 @@ command, which is safe to re-run after a timeout — the server and the browser
 tab survive between waits. You report fix progress to the browser with
 `server.js emit` and hand over the reply drafts with `server.js advance`.
 
-Arguments: "$ARGUMENTS"
+Arguments: the PR/MR number-or-URL and any flags the user included in their message.
 - `--no-fix`: skip triage and fixes (Steps 7–9); reply-only session.
 - `--allow-cross-repo`: allow fixes for a fork PR when the local checkout IS
   that fork (see Step 2).
@@ -207,7 +206,7 @@ STOP — do not start a session.
 First, pull this repo's priors from past sessions (read-only, no network):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" suggest --repo $REPO --repo-dir $REPO_DIR
+node "${PR_REPLIES_HOME}/server/server.js" suggest --repo $REPO --repo-dir $REPO_DIR
 ```
 
 (add `--provider gitlab` for a GitLab MR). It prints JSON: `actionPriors`
@@ -251,11 +250,11 @@ mkdir -p $SESSION
 ```
 
 Write `$SESSION/triage.payload.json` following EXACTLY the schema of
-`${CLAUDE_PLUGIN_ROOT}/examples/payload.triage.json` (`version: 2`, repo, pr
+`${PR_REPLIES_HOME}/examples/payload.triage.json` (`version: 2`, repo, pr
 with `reviewers`, generatedAt, reviewThreads with viewerCanResolve /
 suggestedAction / confidence / fixPlan / proposedDiff, issueComments likewise).
 
-For **GitLab**, follow `${CLAUDE_PLUGIN_ROOT}/examples/payload.triage.gitlab.json`
+For **GitLab**, follow `${PR_REPLIES_HOME}/examples/payload.triage.gitlab.json`
 instead: set `provider: "gitlab"`, `repo.host: "$HOST"`, `repo.nameWithOwner` to
 the `group/project` path, and `pr.number` to the MR IID. (For GitHub leave
 `provider` absent — it defaults to GitHub.)
@@ -270,7 +269,7 @@ step — it hosts the whole session (Claude Code: pass `run_in_background`; Code
 or any other runner: start it detached, e.g. `nohup … &`). Do NOT block on it:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" serve --session $SESSION --repo-dir $REPO_DIR
+node "${PR_REPLIES_HOME}/server/server.js" serve --session $SESSION --repo-dir $REPO_DIR
 ```
 
 For **GitLab**, add `--provider gitlab` (and `--host $HOST` for a self-managed
@@ -290,7 +289,7 @@ self-limits to ~9 minutes (`--timeout-secs 540`); allow it up to ~10 minutes
 re-run it after a timeout — the server and the browser tab survive untouched:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" wait --session $SESSION --phase triage --timeout-secs 540
+node "${PR_REPLIES_HOME}/server/server.js" wait --session $SESSION --phase triage --timeout-secs 540
 ```
 
 If `wait` exits with code **1** it printed no result block (bad session). This
@@ -367,15 +366,15 @@ Shared rules for both variants:
   signature automatically.
 
 Write `$SESSION/reply.payload.json` following EXACTLY
-`${CLAUDE_PLUGIN_ROOT}/examples/payload.reply.json` (`version: 2`; threads
+`${PR_REPLIES_HOME}/examples/payload.reply.json` (`version: 2`; threads
 carry draft / draftHumanized / fixedIn / resolveDefault / viewerCanResolve).
 For **GitLab**, use
-`${CLAUDE_PLUGIN_ROOT}/examples/payload.reply.gitlab.json` and keep the same
+`${PR_REPLIES_HOME}/examples/payload.reply.gitlab.json` and keep the same
 `provider` / `repo.host` you wrote in Step 6. Do NOT include fix diffs — the
 server reads them from git itself. Then:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" advance --session $SESSION --phase reply
+node "${PR_REPLIES_HOME}/server/server.js" advance --session $SESSION --phase reply
 ```
 
 If it exits 1 with validation errors, fix the payload JSON and re-run. If it
@@ -384,7 +383,7 @@ exits 3 (server gone), run `serve --resume` in the background first.
 ## Step 10 — Wait for replies
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" wait --session $SESSION --phase reply --timeout-secs 540
+node "${PR_REPLIES_HOME}/server/server.js" wait --session $SESSION --phase reply --timeout-secs 540
 ```
 
 (Foreground, same ~10-minute ceiling and the same `wait_timeout` /
@@ -412,7 +411,7 @@ threads resolved, skipped, failed (including `resolveErrors`, which are
 non-fatal). Then:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/server/server.js" stop --session $SESSION
+node "${PR_REPLIES_HOME}/server/server.js" stop --session $SESSION
 ```
 
 On a clean finish also `rm -rf $SESSION`. If anything failed, KEEP the session

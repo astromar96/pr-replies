@@ -4,9 +4,9 @@
  * Triage priors. `buildSuggestions({ repo, repoDir })` reads the local history +
  * reply templates and returns the signal the `/pr-replies` command uses to bias
  * its per-comment suggestions: how often this repo's review comments became
- * fixes vs replies vs skips (overall and per Claude-tagged category), and the
+ * fixes vs replies vs skips (overall and per agent-tagged category), and the
  * reusable reply templates. Pure aggregation — no LLM, no network. The server
- * stays dumb; Claude does the classification using these priors.
+ * stays dumb; the agent does the classification using these priors.
  */
 
 const store = require('./store');

@@ -1,5 +1,5 @@
 'use strict';
-/* Reply view (phase: reply) — review Claude's drafts, see the actual fix
+/* Reply view (phase: reply) — review the agent's drafts, see the actual fix
  * commits, edit with a markdown preview, then post. Posting streams per-item
  * status over SSE (derived from the event store); partial failures stay on
  * screen with Retry / Finish anyway. */
@@ -69,7 +69,7 @@
     </${Fragment}>`;
   }
 
-  // Claude authors two drafts per item — Direct (fix-plan) and Humanized.
+  // The agent authors two drafts per item — Direct (fix-plan) and Humanized.
   // Show both side-by-side; picking one loads it into the editable draft below.
   // Renders nothing when only one variant exists (back-compat with old payloads).
   function VariantPicker(props) {

@@ -36,9 +36,9 @@ function providerHost(payload) {
 
 // History decisions come from the browser submit (kind/threadId|databaseId/
 // action/guidance). Enrich each with the reviewer (the thread's first comment
-// author) and Claude's optional `category` looked up from the triage payload,
-// so `suggest` can build per-reviewer and theme/category priors from history
-// without any UI change. Existing fields win; missing ones are filled.
+// author) and the agent's optional `category` looked up from the triage
+// payload, so `suggest` can build per-reviewer and theme/category priors from
+// history without any UI change. Existing fields win; missing ones are filled.
 function enrichDecisions(decisions, triagePayload) {
   if (!triagePayload) return decisions || [];
   const byThread = {};
@@ -319,7 +319,8 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
       if (st.phase !== 'fixing') throw httpError(409, `cannot abort in phase ${st.phase}`);
       if (!st.abortRequested) {
         st.abortRequested = true;
-        recordEvent('note', { text: 'Abort requested — Claude will stop after the current fix.' });
+        const who = config.agentLabel || 'the agent';
+        recordEvent('note', { text: `Abort requested — ${who} will stop after the current fix.` });
         notifyChange();
       }
     },
@@ -443,6 +444,7 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
           autoResolveFixedThreads: config.autoResolveFixedThreads !== false,
           defaultTriageAction: config.defaultTriageAction || null,
           theme: config.theme || 'system',
+          agentLabel: config.agentLabel || null,
         },
         triage: { payload: st.triagePayload, result: st.triageResult },
         fixing: { events: st.events },

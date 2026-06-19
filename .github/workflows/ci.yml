@@ -20,3 +20,5 @@ jobs:
         run: npm test
       - name: Check version sync (package.json <-> plugin.json)
         run: npm run check:version
+      - name: Check agent files in sync (src/agent -> commands + skills)
+        run: npm run check:agents
