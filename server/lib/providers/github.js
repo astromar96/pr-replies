@@ -14,9 +14,11 @@
  * resolvable discussion; "issue" = a top-level comment. GitLab maps the same
  * method names onto MR discussions and notes.)
  *
- * Read operations (fetchPr / fetchThreads / fetchComments / listPrs) are added
- * here too so callers never embed provider queries directly; see ./gitlab.js
- * for the GitLab mapping.
+ * The only read helper here is `listPrs` (open PRs, for a multi-PR picker).
+ * The heavier reads — fetching the PR, its review threads, and its general
+ * comments, with pagination — are owned by the agent workflow
+ * (src/agent/pr-replies.workflow.md, Steps 3–4), not this module; see
+ * ./gitlab.js for the GitLab `listPrs` mapping.
  */
 
 const { execFile } = require('node:child_process');
