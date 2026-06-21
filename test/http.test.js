@@ -99,6 +99,35 @@ function req(port, method, p, body, headers) {
   });
 }
 
+// Send a raw (possibly invalid / oversized) body — req() always serializes
+// valid JSON, so these paths need a hand-built request.
+function rawPost(port, p, rawBody, contentType) {
+  return new Promise((resolve, reject) => {
+    const r = http.request({
+      host: '127.0.0.1', port, path: p, method: 'POST',
+      headers: { 'Content-Type': contentType || 'application/json', 'Content-Length': Buffer.byteLength(rawBody) },
+    }, (res) => {
+      let out = '';
+      res.on('data', (c) => { out += c; });
+      res.on('end', () => { let b = null; try { b = JSON.parse(out); } catch (_) { b = out; } resolve({ status: res.statusCode, body: b, raw: out }); });
+    });
+    r.on('error', reject);
+    r.write(rawBody);
+    r.end();
+  });
+}
+
+test('POST body over the 1MB cap → 413; invalid JSON → 400', async () => {
+  const s = await boot();
+  try {
+    const huge = JSON.stringify({ decisions: ['x'.repeat(1024 * 1024 + 16)] });
+    const big = await rawPost(s.port, '/tok/triage/submit', huge);
+    assert.equal(big.status, 413);
+    const bad = await rawPost(s.port, '/tok/triage/submit', '{ not valid json ');
+    assert.equal(bad.status, 400);
+  } finally { s.server.close(); }
+});
+
 test('GET / serves html; wrong token 404; bad Host 400', async () => {
   const s = await boot();
   try {

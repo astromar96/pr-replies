@@ -4,6 +4,9 @@
   "private": true,
   "description": "Triage, fix, and reply to GitHub PR / GitLab MR comments in a live browser session — with dual reply drafts (direct + humanized), history, and reply templates. Works with Claude Code and OpenAI Codex.",
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
     "ui:preview": "node scripts/ui-preview.js",

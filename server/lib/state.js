@@ -164,31 +164,48 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
     try { history.record(buildRecord(status)); } catch (e) { log(`history record failed: ${e.message}`); }
   }
 
-  // Terminal from any phase (stop / session timeout / SIGTERM). Writes the
-  // result file the next `wait` would poll for: triage if the user never
-  // submitted triage, the reply result otherwise.
-  function terminate(status, reason) {
+  // The single terminal transition. Writes the result file the next `wait`
+  // polls for, flips to the terminal phase, emits session_end, records history
+  // (once), and fires onTerminalCb. Every terminal path — cancel, stop,
+  // timeout, normal finish, and the posting loop's failure path — routes
+  // through here, so a new terminal side-effect lands in exactly one place.
+  // Idempotent: a second call once the session is already terminal is a no-op.
+  function finalize({ phase, resultFile, result, status, reason }) {
     if (st.phase === 'done' || st.phase === 'cancelled') return;
-    if (st.phase === 'triage') {
-      writeAtomic(paths.triageResult, { status, decisions: [], at: new Date().toISOString() });
-    } else {
-      writeAtomic(paths.replyResult, terminalResult(status));
-    }
+    writeAtomic(resultFile, result);
+    if (resultFile === paths.replyResult) st.replyResult = result;
     st.posting = false;
-    setPhase('cancelled');
+    setPhase(phase);
     recordEvent('session_end', { reason });
     recordHistory(status);
     onTerminalCb(reason);
   }
 
+  // Terminal from any phase (stop / session timeout / SIGTERM). Writes the
+  // result file the next `wait` would poll for: triage if the user never
+  // submitted triage, the reply result otherwise.
+  function terminate(status, reason) {
+    if (st.phase === 'done' || st.phase === 'cancelled') return;
+    const onTriage = st.phase === 'triage';
+    finalize({
+      phase: 'cancelled',
+      resultFile: onTriage ? paths.triageResult : paths.replyResult,
+      result: onTriage
+        ? { status, decisions: [], at: new Date().toISOString() }
+        : terminalResult(status),
+      status,
+      reason,
+    });
+  }
+
   function finalizeReply(status, reason) {
-    const result = terminalResult(status);
-    writeAtomic(paths.replyResult, result);
-    st.replyResult = result;
-    setPhase('done');
-    recordEvent('session_end', { reason });
-    recordHistory(status);
-    onTerminalCb(reason);
+    finalize({
+      phase: 'done',
+      resultFile: paths.replyResult,
+      result: terminalResult(status),
+      status,
+      reason,
+    });
   }
 
   async function enrichFixCommits() {
@@ -300,19 +317,15 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
     cancel(from) {
       if (st.phase !== from) throw httpError(409, `cannot cancel ${from} in phase ${st.phase}`);
       if (st.posting) throw httpError(409, 'posting in progress');
-      if (from === 'triage') {
-        writeAtomic(paths.triageResult, { status: 'cancelled', decisions: [], at: new Date().toISOString() });
-        setPhase('cancelled');
-        recordEvent('session_end', { reason: 'cancelled' });
-        recordHistory('cancelled');
-        onTerminalCb('cancelled');
-      } else {
-        writeAtomic(paths.replyResult, terminalResult('cancelled'));
-        setPhase('cancelled');
-        recordEvent('session_end', { reason: 'cancelled' });
-        recordHistory('cancelled');
-        onTerminalCb('cancelled');
-      }
+      finalize({
+        phase: 'cancelled',
+        resultFile: from === 'triage' ? paths.triageResult : paths.replyResult,
+        result: from === 'triage'
+          ? { status: 'cancelled', decisions: [], at: new Date().toISOString() }
+          : terminalResult('cancelled'),
+        status: 'cancelled',
+        reason: 'cancelled',
+      });
     },
 
     requestAbort() {
@@ -358,58 +371,90 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
           results.skipped.push(s);
         }
       }
+      // Record an item as failed (a provider {ok:false}, or an unexpected
+      // throw). Mirrors the success path's bookkeeping so a thrown error and a
+      // returned error are indistinguishable to the browser and to history.
+      function recordItemFailure(r, error) {
+        results.errors = results.errors.filter((e) => e.key !== r.key);
+        results.errors.push({ kind: r.kind, key: r.key, path: r.path, line: r.line, error, body: r.body });
+        st.itemStatus[r.key] = { status: 'failed', error };
+        try {
+          recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'failed', error });
+        } catch (_) { /* event log unwritable — in-memory result still finalizes */ }
+      }
+
       st.posting = true;
       notifyChange();
-      // Caller responds 202 immediately; progress streams over SSE.
+      // Caller responds 202 immediately; progress streams over SSE. The whole
+      // loop is wrapped so a single item's unexpected throw never aborts the
+      // rest, and a catastrophic throw still resets `posting` and finalizes —
+      // otherwise both `wait` and the browser hang until the session times out.
       return (async () => {
-        const { repo, pr } = api.repoAndPr();
-        for (const r of replies) {
-          let text = r.body.trim();
-          if (config.signature) text += `\n\n${config.signature}`;
-          st.itemStatus[r.key] = { status: 'posting', attempt: 1 };
-          recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posting', attempt: 1 });
-          const onAttempt = (attempt, error) => {
-            st.itemStatus[r.key] = { status: 'retrying', attempt, error };
-            recordEvent('post_item', { key: r.key, kind: r.kind, status: 'retrying', attempt, error });
-          };
-          const out = r.kind === 'review'
-            ? await prov.postReviewReply(
-                { repo, pr, threadId: r.threadId, replyToDatabaseId: r.replyToDatabaseId, body: text }, onAttempt)
-            : await prov.postIssueComment({ repo, pr, body: text }, onAttempt);
-          if (out.ok) {
-            postedKeys.add(r.key);
-            results.errors = results.errors.filter((e) => e.key !== r.key);
-            results.posted.push({ kind: r.kind, key: r.key, path: r.path, line: r.line, url: out.url, variant: r.variant });
-            st.itemStatus[r.key] = { status: 'posted', url: out.url };
-            recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posted', url: out.url, variant: r.variant });
-            log(`posted ${r.kind} reply${r.path ? ` (${r.path}:${r.line ?? '?'})` : ''}`);
-            const thread = (st.replyPayload.reviewThreads || []).find((t) => t.id === r.threadId);
-            if (r.kind === 'review' && r.resolve === true && thread && thread.viewerCanResolve) {
-              // Full arg bag: GitHub resolves by global thread node id and
-              // ignores the rest; GitLab needs repo + MR iid + discussion id.
-              const res = await prov.resolveThread(
-                { repo, pr, threadId: r.threadId, replyToDatabaseId: r.replyToDatabaseId }, onAttempt);
-              if (res.ok) {
-                results.resolved.push({ key: r.key, threadId: r.threadId });
-                recordEvent('resolve_item', { key: r.key, status: 'resolved' });
+        try {
+          const { repo, pr } = api.repoAndPr();
+          for (const r of replies) {
+            try {
+              let text = r.body.trim();
+              if (config.signature) text += `\n\n${config.signature}`;
+              st.itemStatus[r.key] = { status: 'posting', attempt: 1 };
+              recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posting', attempt: 1 });
+              const onAttempt = (attempt, error) => {
+                st.itemStatus[r.key] = { status: 'retrying', attempt, error };
+                recordEvent('post_item', { key: r.key, kind: r.kind, status: 'retrying', attempt, error });
+              };
+              const out = r.kind === 'review'
+                ? await prov.postReviewReply(
+                    { repo, pr, threadId: r.threadId, replyToDatabaseId: r.replyToDatabaseId, body: text }, onAttempt)
+                : await prov.postIssueComment({ repo, pr, body: text }, onAttempt);
+              if (out.ok) {
+                postedKeys.add(r.key);
+                results.errors = results.errors.filter((e) => e.key !== r.key);
+                results.posted.push({ kind: r.kind, key: r.key, path: r.path, line: r.line, url: out.url, variant: r.variant });
+                st.itemStatus[r.key] = { status: 'posted', url: out.url };
+                recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posted', url: out.url, variant: r.variant });
+                log(`posted ${r.kind} reply${r.path ? ` (${r.path}:${r.line ?? '?'})` : ''}`);
+                const thread = (st.replyPayload.reviewThreads || []).find((t) => t.id === r.threadId);
+                if (r.kind === 'review' && r.resolve === true && thread && thread.viewerCanResolve) {
+                  // Full arg bag: GitHub resolves by global thread node id and
+                  // ignores the rest; GitLab needs repo + MR iid + discussion id.
+                  const res = await prov.resolveThread(
+                    { repo, pr, threadId: r.threadId, replyToDatabaseId: r.replyToDatabaseId }, onAttempt);
+                  if (res.ok) {
+                    results.resolved.push({ key: r.key, threadId: r.threadId });
+                    recordEvent('resolve_item', { key: r.key, status: 'resolved' });
+                  } else {
+                    results.resolveErrors.push({ key: r.key, threadId: r.threadId, error: res.error });
+                    recordEvent('resolve_item', { key: r.key, status: 'failed', error: res.error });
+                  }
+                }
               } else {
-                results.resolveErrors.push({ key: r.key, threadId: r.threadId, error: res.error });
-                recordEvent('resolve_item', { key: r.key, status: 'failed', error: res.error });
+                recordItemFailure(r, out.error);
+                log(`FAILED ${r.kind} reply: ${out.error}`);
               }
+            } catch (e) {
+              // A provider is documented never to throw, but resolveThread, the
+              // payload lookup, or appendEvent still can. Turn it into a normal
+              // per-item failure instead of stranding the session.
+              const msg = e && e.message ? e.message : String(e);
+              recordItemFailure(r, msg);
+              log(`FAILED ${r.kind} reply (unexpected): ${msg}`);
             }
-          } else {
-            results.errors = results.errors.filter((e) => e.key !== r.key);
-            results.errors.push({ kind: r.kind, key: r.key, path: r.path, line: r.line, error: out.error, body: r.body });
-            st.itemStatus[r.key] = { status: 'failed', error: out.error };
-            recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'failed', error: out.error });
-            log(`FAILED ${r.kind} reply: ${out.error}`);
           }
+        } catch (e) {
+          // Something outside per-item handling threw (e.g. repo/pr resolution).
+          // Don't strand the session — fall through to the terminal logic below.
+          log(`posting loop aborted: ${e && e.message ? e.message : e}`);
+        } finally {
+          st.posting = false;
+          const failed = currentFailed().length;
+          try {
+            recordEvent('post_done', { posted: results.posted.length, failed, skipped: results.skipped.length });
+          } catch (_) { /* event log unwritable */ }
+          notifyChange();
+          // Terminal only when nothing is outstanding. Partial failures keep
+          // phase=reply so the browser can Retry failed / Finish anyway.
+          if (failed === 0) finalizeReply('submitted', 'done');
         }
-        st.posting = false;
-        const failed = currentFailed().length;
-        recordEvent('post_done', { posted: results.posted.length, failed, skipped: results.skipped.length });
-        notifyChange();
-        if (failed === 0) finalizeReply('submitted', 'done');
       })();
     },
 

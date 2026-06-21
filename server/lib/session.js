@@ -28,8 +28,24 @@ function sessionPaths(dir) {
 
 function writeAtomic(file, obj) {
   const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+  // Write + fsync the tmp file before renaming, then best-effort fsync the
+  // directory. The wait/resume contract treats the result files as the durable
+  // source of truth, so the worst case is a reply that landed on GitHub but
+  // whose result the session can't prove after a crash/power-loss. rename is
+  // atomic against torn content but does not by itself guarantee the bytes (or
+  // the rename) reached disk — fsync closes that window.
+  const fd = fs.openSync(tmp, 'w');
+  try {
+    fs.writeFileSync(fd, JSON.stringify(obj, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(tmp, file);
+  try {
+    const dir = fs.openSync(path.dirname(file), 'r');
+    try { fs.fsyncSync(dir); } finally { fs.closeSync(dir); }
+  } catch (_) { /* some platforms/filesystems reject directory fsync — best effort */ }
 }
 
 function readJson(file) {

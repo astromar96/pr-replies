@@ -7,17 +7,31 @@ on:
 
 jobs:
   test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      # The test suite uses only Node built-ins + local modules, so there is
+      # nothing to install (the lone devDependency, playwright, is only for the
+      # UI preview script). Windows + macOS are in the matrix because openUrl and
+      # the /tmp session paths are platform-specific.
+      - name: Run tests
+        run: npm test
+
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # The test suite uses only Node built-ins + local modules, so there is
-      # nothing to install (the lone devDependency, playwright, is only for the
-      # UI preview script).
-      - name: Run tests
-        run: npm test
       - name: Check version sync (package.json <-> plugin.json)
         run: npm run check:version
       - name: Check agent files in sync (src/agent -> commands + skills)

@@ -161,6 +161,22 @@ test('postIssueComment: retries on HTTP 429 with backoff then succeeds', async (
   ]);
 });
 
+test('postIssueComment: a secondary rate limit backs off at least 30s (primary 429 stays fast)', async () => {
+  const { exec, calls } = fakeExec([
+    { err: 'You have exceeded a secondary rate limit and have been temporarily blocked from content creation' },
+    { out: JSON.stringify({ html_url: 'https://github.com/x/comment' }) },
+  ]);
+  const { sleep, delays } = fakeSleep();
+  const gh = createGithub({ exec, sleep });
+
+  const res = await gh.postIssueComment({ repo: 'owner/name', pr: 7, body: 'hi' });
+
+  assert.deepEqual(res, { ok: true, url: 'https://github.com/x/comment' });
+  assert.equal(calls.length, 2);
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] >= 30000, `secondary-limit delay was ${delays[0]}, expected >= 30000`);
+});
+
 test('postIssueComment: gives up after 4 attempts on HTTP 503', async () => {
   let calls = 0;
   const exec = () => { calls++; return Promise.reject(new Error('HTTP 503: unavailable')); };

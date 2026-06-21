@@ -298,6 +298,61 @@ test('submitReplies: happy path posts, resolves, finalizes to done', async () =>
   assert.deepEqual(reasons, ['done']);
 });
 
+test('submitReplies: a resolve failure is non-fatal — posts succeed, session finalizes submitted', async () => {
+  const dir = tmpDir();
+  writeReply(dir);
+  const gh = makeGithub({ resolve: () => ({ ok: false, error: 'resolve boom' }) });
+  const state = makeState(dir, { github: gh });
+  const reasons = [];
+  state.onTerminal((r) => reasons.push(r));
+  await state.init({ startPhase: 'reply' });
+
+  await state.submitReplies({ replies: [REVIEW_REPLY, ISSUE_REPLY] });
+
+  const events = state.eventsSince(0);
+  const resolveEv = events.filter((e) => e.type === 'resolve_item');
+  assert.equal(resolveEv.length, 1);
+  assert.equal(resolveEv[0].status, 'failed');
+  assert.equal(resolveEv[0].error, 'resolve boom');
+  const done = events.find((e) => e.type === 'post_done');
+  assert.equal(done.failed, 0); // a failed resolve is not a failed post
+
+  const result = readJson(sessionPaths(dir).replyResult);
+  assert.equal(result.status, 'submitted');
+  assert.equal(result.posted.length, 2);
+  assert.equal(result.resolved.length, 0);
+  assert.equal(result.resolveErrors.length, 1);
+  assert.equal(result.resolveErrors[0].error, 'resolve boom');
+  assert.equal(state.phase, 'done');
+  assert.deepEqual(reasons, ['done']);
+});
+
+test('submitReplies: an unexpected throw is contained as a per-item failure; the loop never hangs', async () => {
+  const dir = tmpDir();
+  writeReply(dir);
+  // A provider is documented never to throw; simulate a broken one that does.
+  const gh = makeGithub({ review: () => { throw new Error('kaboom'); } });
+  const state = makeState(dir, { github: gh });
+  await state.init({ startPhase: 'reply' });
+
+  // The await completing (not rejecting, not hanging) is itself the assertion.
+  await state.submitReplies({ replies: [{ ...REVIEW_REPLY, resolve: false }, ISSUE_REPLY] });
+
+  const snap = state.snapshot();
+  assert.equal(snap.posting, false);                                   // posting always reset
+  assert.equal(snap.reply.itemStatus['review:PRRT_1'].status, 'failed');
+  assert.match(snap.reply.itemStatus['review:PRRT_1'].error, /kaboom/);
+  assert.equal(snap.reply.itemStatus['issue:222'].status, 'posted');   // loop kept going
+  const done = state.eventsSince(0).find((e) => e.type === 'post_done');
+  assert.equal(done.failed, 1);
+  assert.equal(state.phase, 'reply');                                  // partial failure waits for user
+
+  state.finishReply();
+  const result = readJson(sessionPaths(dir).replyResult);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0].error, /kaboom/);
+});
+
 test('submitReplies: 409 outside reply phase, 400 without a replies array', async () => {
   const dir = tmpDir();
   writeTriage(dir);

@@ -130,7 +130,8 @@ query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id isResolved isOutdated viewerCanResolve path startLine line
-          comments(first: 50) {
+          comments(first: 100) {
+            pageInfo { hasNextPage }
             nodes { databaseId body author { login } createdAt diffHunk }
           }
         }
@@ -144,6 +145,11 @@ Keep ONLY threads where `isResolved` is false. Per thread record: `id`,
 `isOutdated`, `viewerCanResolve`, `path`, `startLine`, `line`, the FIRST
 comment's `databaseId` (as `replyToDatabaseId`) and `diffHunk`, and every
 comment's author/createdAt/body (flatten `author` to its `login` string).
+
+If a thread's `comments.pageInfo.hasNextPage` is true (a single thread with more
+than 100 comments — rare), note to the user that that thread is truncated to its
+first 100 comments; still keep the FIRST comment as `replyToDatabaseId` (replies
+attach to the thread, not to a specific later comment).
 
 From `reviews`, compute `reviewers`: the latest non-`COMMENTED` review state
 per login, as `[{login, state}]` (states like APPROVED / CHANGES_REQUESTED).
@@ -163,7 +169,9 @@ neutral shape:
 - `line` ← `position.new_line` (fall back to `old_line`); `startLine` from
   `position.line_range.start.new_line` when present, else null.
 - `replyToDatabaseId` ← the first note's `id`.
-- `isOutdated` ← `true` when the diff `position` is null/absent, else `false`.
+- `isOutdated` ← `true` when the diff `position` is null/absent, else `false`
+  (a heuristic — GitLab has no direct "outdated" flag, so a discussion whose
+  position the API no longer resolves is treated as outdated).
 - `viewerCanResolve` ← `true` (a resolvable discussion can be resolved by a
   member; the server still re-checks before resolving).
 - `comments` ← every note's `{author: note.author.username, createdAt:

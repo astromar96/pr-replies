@@ -72,15 +72,21 @@ function createGitlabProvider({
     return { ok: true, url: noteUrl(host, repo, pr, data.id) };
   }
 
-  // Mark a resolvable discussion resolved. GitLab resolves the whole discussion;
-  // confirm at least one of its notes came back resolved.
+  // Mark a resolvable discussion resolved. GitLab resolves the whole discussion.
+  // Idempotent: re-resolving an already-resolved discussion returns its notes
+  // with resolved:true, which we accept. Only a discussion that still has an
+  // explicitly-unresolved resolvable note (or came back with nothing resolved at
+  // all) is a real failure — so a thread someone else already resolved between
+  // triage and posting doesn't surface a spurious resolve error.
   async function resolveAttempt({ repo, pr, threadId }) {
     const data = parseResponse(await run([
       'api', '-X', 'PUT',
       `projects/${encProject(repo)}/merge_requests/${pr}/discussions/${threadId}?resolved=true`,
     ]), 'resolve discussion');
     const notes = Array.isArray(data.notes) ? data.notes : [];
-    if (!notes.some((n) => n.resolved === true)) throw new Error('resolve discussion: not resolved');
+    const stillUnresolved = notes.some((n) => n.resolvable === true && n.resolved === false);
+    const anyResolved = notes.some((n) => n.resolved === true);
+    if (stillUnresolved || !anyResolved) throw new Error('resolve discussion: not resolved');
     return { ok: true };
   }
 

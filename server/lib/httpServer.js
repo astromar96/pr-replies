@@ -146,7 +146,15 @@ function createApp({ state = null, data = null, snapshot = null, token, html, on
         // 202: posting continues async, progress streams over SSE. Sync
         // validation errors still reject before the response is written.
         const posting = state.submitReplies(body);
-        if (posting && posting.catch) posting.catch((e) => log(`posting loop error: ${e.message}`));
+        // submitReplies now contains its own failures and always finalizes when
+        // it can, so this rejection is unreachable — but if the loop ever does
+        // reject, force the session terminal so `wait`/the browser never hang.
+        if (posting && posting.catch) {
+          posting.catch((e) => {
+            log(`posting loop error: ${e.message}`);
+            try { state.stop('stopped'); } catch (_) { /* already terminal */ }
+          });
+        }
         return respondJson(res, 202, { ok: true });
       }
       case 'reply/finish':

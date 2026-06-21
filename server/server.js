@@ -35,6 +35,15 @@
  */
 'use strict';
 
+// Fail fast with an actionable message below the supported Node floor, instead
+// of a cryptic syntax/`node --test` error deeper in. Keep this above the
+// requires so it runs before anything else. Mirrors `engines.node` in package.json.
+const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
+if (NODE_MAJOR < 18) {
+  process.stderr.write(`pr-replies requires Node 18 or newer (found ${process.version}). Please upgrade Node.\n`);
+  process.exit(1);
+}
+
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
