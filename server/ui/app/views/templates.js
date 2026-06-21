@@ -75,7 +75,7 @@
         setSaving(false);
         setNote('Saved ' + PRR.plural(templates.length, 'template') + '.');
         ingest(d.templates || []);
-      }).catch(function (e) { setSaving(false); PRR.banner('err', 'Could not save templates: ' + PRR.esc(e.message)); });
+      }).catch(function (e) { setSaving(false); PRR.banner('err', 'Could not save templates: ' + e.message); });
     }
 
     let bodyInner;

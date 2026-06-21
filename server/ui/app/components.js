@@ -127,8 +127,11 @@
   C.Banners = function () {
     const list = PRR.useStore(PRR.stores.banners);
     return list.map(function (b) {
+      // Strings render as escaped text by default (React escapes a text child);
+      // only an explicit html:true opts into raw HTML, removing the old
+      // every-caller-must-escape footgun.
       const body = typeof b.content === 'string'
-        ? html`<span dangerouslySetInnerHTML=${{ __html: b.content }} />`
+        ? (b.html ? html`<span dangerouslySetInnerHTML=${{ __html: b.content }} />` : b.content)
         : b.content;
       // Announce banners to assistive tech — warnings/errors assertively.
       const assertive = /warn|err|danger/.test(b.cls || '');

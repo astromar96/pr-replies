@@ -38,6 +38,26 @@ test('sessions() reports liveness via injected isPidAlive, live-first', () => {
   assert.equal(sessions[1].alive, false);
 });
 
+test('pruneStale removes dead+old dirs, keeps live, recent, and bootstrapping dirs', () => {
+  freshConfig();
+  const base = seedSessions(); // pr1 (pid 1001) + pr2 (pid 1002), both updatedAt Jan 2026 (old)
+  // a recently-touched but dead session
+  fs.mkdirSync(path.join(base, 'o-r-pr3-300'));
+  fs.writeFileSync(path.join(base, 'o-r-pr3-300', 'session.json'),
+    JSON.stringify({ pid: 1003, phase: 'reply', repo: 'o/r', pr: 3, updatedAt: new Date(Date.now() - 60000).toISOString() }));
+  // a dir mid-boot: no session.json yet
+  fs.mkdirSync(path.join(base, 'o-r-pr4-400'));
+
+  const dp = createDataPlane({ sessionsDir: base, alive: (pid) => pid === 1002 });
+  const { removed } = dp.pruneStale();
+
+  assert.equal(removed, 1);
+  assert.equal(fs.existsSync(path.join(base, 'o-r-pr1-100')), false); // dead + old → pruned
+  assert.equal(fs.existsSync(path.join(base, 'o-r-pr2-200')), true);  // live → kept
+  assert.equal(fs.existsSync(path.join(base, 'o-r-pr3-300')), true);  // dead but recent → kept
+  assert.equal(fs.existsSync(path.join(base, 'o-r-pr4-400')), true);  // no session.json → kept
+});
+
 test('templates() and saveTemplates() round-trip through the store', () => {
   freshConfig();
   const dp = createDataPlane({});

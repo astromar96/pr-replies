@@ -58,7 +58,7 @@ function writeUserTemplates(list) {
     if (Array.isArray(t.tags)) out.tags = t.tags.map(String);
     return out;
   });
-  fs.mkdirSync(configDir(), { recursive: true });
+  fs.mkdirSync(configDir(), { recursive: true, mode: 0o700 });
   writeAtomic(templatesUserPath(), { version: 1, templates: clean });
   return clean;
 }
@@ -120,7 +120,7 @@ function pruneHistory(max) {
 }
 
 function writeHistory(rec) {
-  fs.mkdirSync(historyDir(), { recursive: true });
+  fs.mkdirSync(historyDir(), { recursive: true, mode: 0o700 });
   writeAtomic(historyPath(rec.id), rec);
 }
 

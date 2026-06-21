@@ -276,7 +276,7 @@
         return s && ((s.draft && s.draft !== (it.item.draft || '')) || s.assignee);
       });
       if (!dirty) return;
-      const b = PRR.banner('warn', 'Found reply edits from ' + PRR.esc(PRR.relTime(loaded.savedAt)) + '.', [
+      const b = PRR.banner('warn', 'Found reply edits from ' + PRR.relTime(loaded.savedAt) + '.', [
         { label: 'Restore', onClick: function () { applySaved(saved); b.dismiss(); } },
         { label: 'Dismiss', onClick: function () { b.dismiss(); } },
       ]);
@@ -347,14 +347,14 @@
       });
       setPosting(true); setLockMsg('Posting ' + PRR.plural(replies.length, 'reply') + '…');
       PRR.api.post('reply/submit', { replies: replies, skipped: skipped }).catch(function (e) {
-        PRR.banner('err', 'Failed to submit: ' + PRR.esc(e.message) + ' — is the session still running?');
+        PRR.banner('err', 'Failed to submit: ' + e.message + ' — is the session still running?');
         setPosting(false);
       });
     }
     submitRef.current = submit;
 
     function cancel() { setPosting(true); setLockMsg('Cancelling…'); PRR.api.post('reply/cancel').catch(function () {}); }
-    function finish() { PRR.api.post('reply/finish').catch(function (e) { PRR.banner('err', PRR.esc(e.message)); }); }
+    function finish() { PRR.api.post('reply/finish').catch(function (e) { PRR.banner('err', e.message); }); }
 
     // ---- keyboard ----
     useEffect(function () {

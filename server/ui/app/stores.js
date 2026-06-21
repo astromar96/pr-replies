@@ -72,17 +72,18 @@
   // ---------- transient banners (rendered at the top of #app) ----------
   let bannerSeq = 0;
   const banners = makeStore([]);
-  // content is a React node or an escape-safe HTML string; actions is an
-  // optional array of { label, onClick, primary }.
-  banners.push = function (cls, content, actions) {
+  // content is a React node or a plain string (rendered as escaped text by
+  // default). Pass html=true ONLY for a trusted, pre-escaped HTML string.
+  // actions is an optional array of { label, onClick, primary }.
+  banners.push = function (cls, content, actions, html) {
     const id = ++bannerSeq;
-    banners.set(banners.get().concat([{ id: id, cls: cls, content: content, actions: actions || null }]));
+    banners.set(banners.get().concat([{ id: id, cls: cls, content: content, actions: actions || null, html: !!html }]));
     return { id: id, dismiss: function () { banners.dismiss(id); } };
   };
   banners.dismiss = function (id) { banners.set(banners.get().filter(function (b) { return b.id !== id; })); };
   banners.clear = function () { if (banners.get().length) banners.set([]); };
   // Imperative shortcut used across views, matching the old PRR.banner signature.
-  PRR.banner = function (cls, content, actions) { return banners.push(cls, content, actions); };
+  PRR.banner = function (cls, content, actions, html) { return banners.push(cls, content, actions, html); };
 
   // ---------- event log (SSE fan-in) ----------
   // The full, seq-ordered event stream — seeded from the snapshot's persisted

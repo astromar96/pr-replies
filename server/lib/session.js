@@ -34,7 +34,10 @@ function writeAtomic(file, obj) {
   // whose result the session can't prove after a crash/power-loss. rename is
   // atomic against torn content but does not by itself guarantee the bytes (or
   // the rename) reached disk — fsync closes that window.
-  const fd = fs.openSync(tmp, 'w');
+  // 0600: session.json carries the URL auth token and the result/payload files
+  // carry private review content. The fresh tmp file's mode (owner-only) carries
+  // through the rename to the destination.
+  const fd = fs.openSync(tmp, 'w', 0o600);
   try {
     fs.writeFileSync(fd, JSON.stringify(obj, null, 2));
     fs.fsyncSync(fd);
@@ -57,7 +60,9 @@ function readJson(file) {
 }
 
 function appendEvent(dir, event) {
-  fs.appendFileSync(sessionPaths(dir).eventsLog, JSON.stringify(event) + '\n');
+  // mode applies only when the log is first created; events.jsonl holds review
+  // content, so keep it owner-only too (the 0700 session dir already shields it).
+  fs.appendFileSync(sessionPaths(dir).eventsLog, JSON.stringify(event) + '\n', { mode: 0o600 });
 }
 
 function readEvents(dir, afterSeq = 0) {

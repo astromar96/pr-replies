@@ -184,6 +184,8 @@ async function cmdServeHome(flags) {
   // repoDir lets the hub merge repo-local reply templates (.pr-replies/templates.json).
   const repoDir = flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null;
   const data = createDataPlane({ repoDir, config });
+  // Sweep abandoned session dirs (dead pid + old) once on hub start.
+  try { const { removed } = data.pruneStale(); if (removed) logErr(`pruned ${removed} stale session dir(s)`); } catch (_) { /* non-fatal */ }
   const clientConfig = {
     signature: config.signature || '',
     autoResolveFixedThreads: config.autoResolveFixedThreads !== false,
@@ -214,7 +216,7 @@ async function cmdServeHome(flags) {
   await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
   const port = app.server.address().port;
   const url = `http://127.0.0.1:${port}/${token}/`;
-  fs.mkdirSync(store.configDir(), { recursive: true });
+  fs.mkdirSync(store.configDir(), { recursive: true, mode: 0o700 });
   writeAtomic(homeFile, { version: 1, pid: process.pid, port, token, url, startedAt: new Date().toISOString() });
   logErr(`pr-replies hub: ${url}`);
 
@@ -233,7 +235,9 @@ async function cmdServeHome(flags) {
 async function cmdServe(flags) {
   if (flags.home) return cmdServeHome(flags);
   const sessionDir = path.resolve(flags.session);
-  fs.mkdirSync(sessionDir, { recursive: true });
+  // 0700: the session dir holds the URL auth token and private review content
+  // under a predictable /tmp path, so keep other local users out.
+  fs.mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
   const paths = sessionPaths(sessionDir);
 
   const { config, warnings } = loadConfig();

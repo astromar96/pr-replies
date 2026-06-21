@@ -168,7 +168,7 @@
         return s && (s.guidance || s.assignee || s.action !== defaultAction(it.item, snapshot));
       });
       if (!dirty) return;
-      const b = PRR.banner('warn', 'Found triage edits from ' + PRR.esc(PRR.relTime(loaded.savedAt)) + '.', [
+      const b = PRR.banner('warn', 'Found triage edits from ' + PRR.relTime(loaded.savedAt) + '.', [
         { label: 'Restore', onClick: function () { applySaved(saved); b.dismiss(); } },
         { label: 'Dismiss', onClick: function () { b.dismiss(); } },
       ]);
@@ -198,7 +198,7 @@
       });
       setLocked(true); setLockMsg('Submitting…');
       PRR.api.post('triage/submit', { decisions: out }).catch(function (e) {
-        PRR.banner('err', 'Failed to submit: ' + PRR.esc(e.message) + ' — is the session still running?');
+        PRR.banner('err', 'Failed to submit: ' + e.message + ' — is the session still running?');
         setLocked(false); setLockMsg('');
       });
       // success path: the phase SSE event swaps the view to progress

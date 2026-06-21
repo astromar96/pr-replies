@@ -42,6 +42,26 @@ function createDataPlane({
     return out;
   }
 
+  // Best-effort removal of abandoned session dirs (crash leftovers) under the
+  // sessions root. Gated on BOTH a dead pid AND age, so a live session, a
+  // just-launched one mid-boot (no session.json yet), or one waiting to be
+  // --resume'd within the window is never clobbered. Called on hub start.
+  function pruneStale({ maxAgeMs = 24 * 60 * 60 * 1000 } = {}) {
+    let names;
+    try { names = fs.readdirSync(sessionsDir); } catch (_) { return { removed: 0 }; }
+    const cutoff = Date.now() - maxAgeMs;
+    let removed = 0;
+    for (const n of names) {
+      const dir = path.join(sessionsDir, n);
+      const s = readJson(path.join(dir, 'session.json'));
+      if (!s || !s.pid || alive(s.pid)) continue;             // no record, or still running → keep
+      const touched = Date.parse(s.updatedAt || s.startedAt || '') || 0;
+      if (touched > cutoff) continue;                          // recently active → keep (resumable)
+      try { fs.rmSync(dir, { recursive: true, force: true }); removed += 1; } catch (_) { /* best effort */ }
+    }
+    return { removed };
+  }
+
   function history() { return store.listHistory(config.historyMax || 200); }
 
   function historyDetail(id) {
@@ -57,7 +77,7 @@ function createDataPlane({
     return store.readMergedTemplates(repoDir);
   }
 
-  return { sessions, history, historyDetail, templates, saveTemplates };
+  return { sessions, history, historyDetail, templates, saveTemplates, pruneStale };
 }
 
 module.exports = { createDataPlane };

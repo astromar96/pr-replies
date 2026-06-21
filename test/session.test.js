@@ -39,6 +39,15 @@ test('writeAtomic: content round-trips and leaves no .tmp file behind', () => {
   assert.equal(fs.existsSync(`${file}.tmp`), false);
 });
 
+test('writeAtomic + appendEvent write owner-only (0600) files', { skip: process.platform === 'win32' }, () => {
+  const dir = tmpDir();
+  const file = path.join(dir, 'secret.json');
+  writeAtomic(file, { token: 'abc' });
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  appendEvent(dir, { seq: 1, type: 'note', text: 'hi' });
+  assert.equal(fs.statSync(sessionPaths(dir).eventsLog).mode & 0o777, 0o600);
+});
+
 test('readJson: parses valid JSON, returns null on missing or invalid file', () => {
   const file = path.join(tmpDir(), 'x.json');
   assert.equal(readJson(file), null);

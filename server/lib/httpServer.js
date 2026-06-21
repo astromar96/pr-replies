@@ -9,8 +9,17 @@
  */
 
 const http = require('node:http');
+const crypto = require('node:crypto');
 
 const { validateTemplates } = require('./schema');
+
+// Constant-time equality on the URL token segment, so a local attacker can't
+// learn the token a character at a time from response timing. Length is checked
+// first because timingSafeEqual requires equal-length buffers.
+function tokenMatches(candidate, token) {
+  if (candidate.length !== token.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(token));
+}
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const SSE_KEEPALIVE_MS = 25000;
@@ -184,8 +193,14 @@ function createApp({ state = null, data = null, snapshot = null, token, html, on
       if (port && host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) {
         return respond(res, 400, 'text/plain', 'bad host');
       }
+      // Auth is the per-session URL token (first path segment), compared in
+      // constant time. A bare /{token} with no trailing slash is also rejected,
+      // matching the previous prefix check.
       const prefix = `/${token}/`;
-      if (!url.pathname.startsWith(prefix)) return respond(res, 404, 'text/plain', 'not found');
+      const seg = url.pathname.split('/')[1] || '';
+      if (!tokenMatches(seg, token) || !url.pathname.startsWith(prefix)) {
+        return respond(res, 404, 'text/plain', 'not found');
+      }
       const sub = url.pathname.slice(prefix.length);
       route(req, res, sub, url.searchParams).catch((e) => {
         const code = e.statusCode || 500;
