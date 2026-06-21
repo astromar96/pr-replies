@@ -136,6 +136,11 @@
         <${C.Seg} name=${'seg-' + key} value=${dec.action} options=${SEG_OPTS} disabled=${props.locked} onChange=${props.onAction} />
         <${VariantPicker} itemKey=${key} item=${item} variant=${dec.variant} locked=${props.locked} onPick=${props.onPickVariant} />
         <${DraftTools} itemKey=${key} draft=${dec.draft} previewOn=${props.previewOn} locked=${props.locked} hint=${hint} onDraft=${props.onDraft} onTab=${props.onTab} />
+        ${!isIssue && item.suggestion ? html`<div className="resolve-row suggestion-row">
+          <label><input type="checkbox" data-suggestion=${key} checked=${!!dec.asSuggestion} disabled=${props.locked}
+            onChange=${function (e) { props.onSuggestion(e.target.checked); }} /> Append a committable <b>suggestion</b> — the reviewer can apply the fix from the PR</label>
+          ${dec.asSuggestion ? html`<pre className="diff suggestion-preview">${item.suggestion}</pre>` : null}
+        </div>` : null}
         ${!isIssue ? html`<div className=${'resolve-row' + (item.viewerCanResolve ? '' : ' disabled')} title=${item.viewerCanResolve ? undefined : 'You cannot resolve this thread (no permission, or the thread is locked)'}>
           <input type="checkbox" data-resolve=${key} checked=${!!dec.resolve && item.viewerCanResolve} disabled=${!item.viewerCanResolve || props.locked}
             onChange=${function (e) { props.onResolve(e.target.checked); }} /> Resolve thread after replying</div>` : null}
@@ -182,7 +187,7 @@
       P.reviewThreads.forEach(function (t) {
         const key = PRR.itemKey(t);
         const resolveOn = t.resolveDefault != null ? t.resolveDefault : (!!t.fixedIn && t.viewerCanResolve && autoResolve);
-        d[key] = { action: 'reply', variant: 'direct', draft: t.draft || t.draftHumanized || '', resolve: !!(resolveOn && t.viewerCanResolve), assignee: '', mention: false };
+        d[key] = { action: 'reply', variant: 'direct', draft: t.draft || t.draftHumanized || '', resolve: !!(resolveOn && t.viewerCanResolve), assignee: '', mention: false, asSuggestion: false };
       });
       P.issueComments.forEach(function (c) {
         d[PRR.itemKey(c)] = { action: 'reply', variant: 'direct', draft: c.draft || c.draftHumanized || '', resolve: false, assignee: '', mention: false };
@@ -238,7 +243,7 @@
         const reply = {};
         const cur = stateRef.current.decisions;
         Object.keys(cur).forEach(function (k) {
-          reply[k] = { draft: cur[k].draft, variant: cur[k].variant, include: cur[k].action === 'reply', resolve: cur[k].resolve, assignee: cur[k].assignee, mention: cur[k].mention };
+          reply[k] = { draft: cur[k].draft, variant: cur[k].variant, include: cur[k].action === 'reply', resolve: cur[k].resolve, assignee: cur[k].assignee, mention: cur[k].mention, asSuggestion: cur[k].asSuggestion };
         });
         PRR.store.save({ reply: reply });
         PRR.api.post('data/decisions', { reply: reply }).catch(function () {});
@@ -262,6 +267,7 @@
             resolve: it.kind === 'review' && it.item.viewerCanResolve ? !!s.resolve : prev[it.key].resolve,
             assignee: s.assignee || prev[it.key].assignee,
             mention: !!s.mention,
+            asSuggestion: it.kind === 'review' && it.item.suggestion ? !!s.asSuggestion : prev[it.key].asSuggestion,
           });
         });
         return next;
@@ -337,6 +343,9 @@
           if (it.kind === 'review') {
             r.threadId = it.item.id; r.replyToDatabaseId = it.item.replyToDatabaseId; r.path = it.item.path; r.line = it.item.line;
             r.resolve = !!cur.decisions[it.key].resolve;
+            // The suggestion text itself is server-authoritative (read from the
+            // payload); the client only opts in.
+            if (it.item.suggestion && cur.decisions[it.key].asSuggestion) r.asSuggestion = true;
           }
           replies.push(r);
         } else {
@@ -412,6 +421,7 @@
         onPickVariant=${function (which) { pickVariant(key, which); }}
         onDraft=${function (v) { setItem(key, { draft: v }); }}
         onResolve=${function (v) { setItem(key, { resolve: v }); }}
+        onSuggestion=${function (v) { setItem(key, { asSuggestion: v }); }}
         onAssignee=${function (v) { setItem(key, { assignee: v }); }}
         onMention=${function (v) { setItem(key, { mention: v }); }}
         onTab=${function (p) { setPreview(function (prev) { const n = {}; n[key] = p; return Object.assign({}, prev, n); }); }} />`;

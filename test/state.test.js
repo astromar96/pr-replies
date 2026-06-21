@@ -353,6 +353,39 @@ test('submitReplies: an unexpected throw is contained as a per-item failure; the
   assert.match(result.errors[0].error, /kaboom/);
 });
 
+test('submitReplies: asSuggestion appends the payload suggestion as a committable block', async () => {
+  const dir = tmpDir();
+  // Seed a reply payload whose first thread carries a server-side suggestion.
+  const p = replyPayload();
+  p.reviewThreads[0].suggestion = '  const entry = store.get(key);\n  if (!entry) return undefined;';
+  writeReply(dir, p);
+  const bodies = [];
+  const gh = makeGithub({ review: (req) => { bodies.push(req.body); return { ok: true, url: 'u' }; } });
+  const state = makeState(dir, { github: gh });
+  await state.init({ startPhase: 'reply' });
+
+  await state.submitReplies({ replies: [{ ...REVIEW_REPLY, resolve: false, asSuggestion: true }] });
+
+  assert.equal(bodies.length, 1);
+  assert.match(bodies[0], /```suggestion\n {2}const entry = store\.get\(key\);\n {2}if \(!entry\) return undefined;\n```/);
+  // The human draft is preserved above the block.
+  assert.ok(bodies[0].startsWith(REVIEW_REPLY.body));
+});
+
+test('submitReplies: asSuggestion is a no-op when the thread has no suggestion', async () => {
+  const dir = tmpDir();
+  writeReply(dir); // no suggestion field
+  const bodies = [];
+  const gh = makeGithub({ review: (req) => { bodies.push(req.body); return { ok: true, url: 'u' }; } });
+  const state = makeState(dir, { github: gh });
+  await state.init({ startPhase: 'reply' });
+
+  await state.submitReplies({ replies: [{ ...REVIEW_REPLY, resolve: false, asSuggestion: true }] });
+
+  assert.equal(bodies.length, 1);
+  assert.ok(!bodies[0].includes('```suggestion'));
+});
+
 test('submitReplies: 409 outside reply phase, 400 without a replies array', async () => {
   const dir = tmpDir();
   writeTriage(dir);

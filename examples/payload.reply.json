@@ -37,7 +37,8 @@
       "fixedIn": "abc1234",
       "resolveDefault": true,
       "draft": "Fixed in `abc1234` — `get()` now returns early on a cache miss instead of dereferencing `entry`.",
-      "draftHumanized": "Good catch! You're right that a cache miss would have thrown there. I added an early return so `get()` bails out cleanly when `entry` is undefined — it's in `abc1234`."
+      "draftHumanized": "Good catch! You're right that a cache miss would have thrown there. I added an early return so `get()` bails out cleanly when `entry` is undefined — it's in `abc1234`.",
+      "suggestion": "  const entry = store.get(key);\n  if (!entry) return undefined;"
     },
     {
       "id": "PRRT_kwDOExample002",

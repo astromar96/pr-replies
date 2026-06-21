@@ -326,7 +326,10 @@ in order:
 
 1. `node .../server.js emit --session $SESSION --type fix_start --item <key>`
    where `<key>` is `review:<threadId>` or `issue:<databaseId>`.
-2. Make the change with Edit/Write.
+2. Make the change with Edit/Write. If the reviewer's own comment body contains
+   a ```suggestion block and its anchor still matches the current file at the
+   commented line(s), apply that exact replacement **verbatim** — it is the
+   change the reviewer asked for — rather than re-deriving it.
 3. If the repo has an obvious check (package.json scripts, Makefile…), run it,
    reporting via
    `emit --type check --name <script> --status running|pass|fail [--detail "…"]`.
@@ -365,6 +368,13 @@ variants — the user picks one in the browser:
 Shared rules for both variants:
 - Set `fixedIn` to the short SHA and `resolveDefault` to true when the thread's
   `viewerCanResolve` is true.
+- For a review thread whose fix is a **single contiguous in-place hunk on the
+  commented line range** (and the thread is not outdated), you MAY also set
+  `suggestion` to the exact replacement lines for that range — raw code, NO
+  ```suggestion fence (the server wraps it). The browser shows an opt-in
+  "Append a committable suggestion" so the reviewer can apply the fix from the
+  PR. Omit `suggestion` for multi-hunk, moved, or outdated changes — a
+  mismatched range posts a non-committable block.
 - Keep each under ~120 words, no greetings/sign-offs. If the requested change
   already exists, say where. If you cannot determine the answer from the code,
   ask a clarifying question instead of guessing.
@@ -375,7 +385,8 @@ Shared rules for both variants:
 
 Write `$SESSION/reply.payload.json` following EXACTLY
 `${PR_REPLIES_HOME}/examples/payload.reply.json` (`version: 2`; threads
-carry draft / draftHumanized / fixedIn / resolveDefault / viewerCanResolve).
+carry draft / draftHumanized / fixedIn / resolveDefault / viewerCanResolve /
+optional suggestion).
 For **GitLab**, use
 `${PR_REPLIES_HOME}/examples/payload.reply.gitlab.json` and keep the same
 `provider` / `repo.host` you wrote in Step 6. Do NOT include fix diffs — the

@@ -534,6 +534,12 @@ kbd {
   padding: 1px 6px; margin-right: 2px;
 }
 
+/* committable-suggestion toggle + preview (reply view) */
+.suggestion-row { display: block; }
+.suggestion-row label { display: inline; }
+.suggestion-preview { margin-top: 8px; }
+.suggestion-preview span { color: var(--add, inherit); }
+
 /* summary view */
 .summary-list { background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; margin-top: 14px; }
 .summary-list .trow .t-label { font-family: inherit; }

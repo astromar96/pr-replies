@@ -123,6 +123,9 @@ function validateReplyPayload(payload) {
     checkString(errors, `${where}.draft`, t.draft, { optional: true });
     checkString(errors, `${where}.draftHumanized`, t.draftHumanized, { optional: true });
     checkString(errors, `${where}.fixedIn`, t.fixedIn, { optional: true });
+    // Optional committable suggestion: the replacement lines for the commented
+    // range, posted as a ```suggestion block when the user opts in.
+    checkString(errors, `${where}.suggestion`, t.suggestion, { optional: true });
     if (t.resolveDefault != null && typeof t.resolveDefault !== 'boolean') {
       err(errors, `${where}.resolveDefault`, 'expected boolean');
     }

@@ -395,6 +395,18 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
           for (const r of replies) {
             try {
               let text = r.body.trim();
+              // Opt-in committable suggestion: append the payload's server-side
+              // `suggestion` (never client-supplied) as a ```suggestion block, so
+              // the reviewer can accept the agent's exact fix from the PR. Only
+              // for review threads (a suggestion is anchored to a diff range).
+              if (r.asSuggestion === true && r.kind === 'review') {
+                const thread = (st.replyPayload.reviewThreads || []).find((t) => t.id === r.threadId);
+                const suggestion = thread && typeof thread.suggestion === 'string' ? thread.suggestion : null;
+                if (suggestion != null) {
+                  const block = '```suggestion\n' + suggestion.replace(/\n+$/, '') + '\n```';
+                  text = text ? `${text}\n\n${block}` : block;
+                }
+              }
               if (config.signature) text += `\n\n${config.signature}`;
               st.itemStatus[r.key] = { status: 'posting', attempt: 1 };
               recordEvent('post_item', { key: r.key, kind: r.kind, path: r.path, line: r.line, status: 'posting', attempt: 1 });
