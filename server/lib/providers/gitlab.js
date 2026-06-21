@@ -104,7 +104,6 @@ function createGitlabProvider({
       reviewDecision: null,
       updatedAt: m.updated_at || m.updatedAt || null,
       url: m.web_url || m.webUrl || m.url || null,
-      unresolved: null,
     }));
   }
 

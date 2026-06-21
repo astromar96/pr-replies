@@ -291,6 +291,13 @@ async function main() {
       await shot(page, '06b-history-detail.png');
     }
 
+    // Open PRs picker — gh may be unauthenticated here, so accept the list, an
+    // empty state, or the error banner; the point is the view renders.
+    await page.goto(home.url + '#/prs', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.summary-list, .empty-state, .banner', { timeout: 15000 });
+    await sleep(pause);
+    await shot(page, '05b-open-prs.png');
+
     await page.goto(home.url + '#/templates', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.tmpl-row, .empty-state', { timeout: 15000 });
     await sleep(pause);

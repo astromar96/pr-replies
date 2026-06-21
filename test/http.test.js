@@ -272,6 +272,7 @@ function fakeData() {
   let saved = [{ id: 'a', name: 'A', scope: 'reply', body: 'x', source: 'user', readonly: false }];
   return {
     sessions() { return [{ repo: 'o/r', pr: 1, phase: 'reply', url: 'http://127.0.0.1:1/t/', pid: 1, alive: true, startedAt: '', updatedAt: '' }]; },
+    async prs() { return { repo: 'o/r', provider: 'github', prs: [{ number: 7, title: 'Fix', author: 'a', url: 'u' }], error: null }; },
     history() { return [{ id: 'h1', repo: 'o/r', pr: 1, status: 'submitted', endedAt: '', counts: {} }]; },
     historyDetail(id) { return id === 'h1' ? { id: 'h1', repo: 'o/r', pr: 1, posted: [] } : null; },
     templates() { return saved; },
@@ -304,6 +305,9 @@ test('data plane: GET sessions/history/templates return shapes', async () => {
   const s = await bootData();
   try {
     assert.equal((await req(s.port, 'GET', '/tok/data/sessions')).body.sessions.length, 1);
+    const prs = await req(s.port, 'GET', '/tok/data/prs');
+    assert.equal(prs.status, 200);
+    assert.equal(prs.body.prs[0].number, 7);
     assert.equal((await req(s.port, 'GET', '/tok/data/history')).body.history.length, 1);
     assert.equal((await req(s.port, 'GET', '/tok/data/templates')).body.templates[0].id, 'a');
     const detail = await req(s.port, 'GET', '/tok/data/history/h1');

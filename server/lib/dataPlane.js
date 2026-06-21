@@ -21,6 +21,8 @@ function createDataPlane({
   repoDir = null,
   config = {},
   alive = isPidAlive,
+  provider = null,
+  repo = null,
   sessionsDir = process.env.PR_REPLIES_SESSIONS_DIR || DEFAULT_SESSIONS_DIR,
 } = {}) {
   function sessions() {
@@ -62,6 +64,22 @@ function createDataPlane({
     return { removed };
   }
 
+  // Open PRs/MRs for the hub's PR picker. Read-only: shells out to gh/glab via
+  // the injected provider. Returns a tagged result so the UI can show a reason
+  // (no repo context, or a gh/glab error) instead of a bare empty list. Never
+  // throws — listing PRs must not take the hub down.
+  async function prs() {
+    if (!provider || !repoDir) {
+      return { repo: repo, provider: provider ? provider.name : null, prs: [], error: 'no repository context (run the hub from inside a repo)' };
+    }
+    try {
+      const list = await provider.listPrs({ repoDir });
+      return { repo: repo, provider: provider.name, prs: list, error: null };
+    } catch (e) {
+      return { repo: repo, provider: provider.name, prs: [], error: (e && e.message) || 'could not list PRs' };
+    }
+  }
+
   function history() { return store.listHistory(config.historyMax || 200); }
 
   function historyDetail(id) {
@@ -77,7 +95,7 @@ function createDataPlane({
     return store.readMergedTemplates(repoDir);
   }
 
-  return { sessions, history, historyDetail, templates, saveTemplates, pruneStale };
+  return { sessions, history, historyDetail, templates, saveTemplates, pruneStale, prs };
 }
 
 module.exports = { createDataPlane };

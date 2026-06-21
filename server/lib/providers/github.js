@@ -117,7 +117,6 @@ function createGithubProvider({
       reviewDecision: p.reviewDecision || null,
       updatedAt: p.updatedAt,
       url: p.url,
-      unresolved: null,
     }));
   }
 

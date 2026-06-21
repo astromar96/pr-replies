@@ -58,6 +58,31 @@ test('pruneStale removes dead+old dirs, keeps live, recent, and bootstrapping di
   assert.equal(fs.existsSync(path.join(base, 'o-r-pr4-400')), true);  // no session.json → kept
 });
 
+test('prs() lists open PRs via the provider, and degrades gracefully', async () => {
+  freshConfig();
+  // No provider/repoDir → tagged error, never throws.
+  const bare = createDataPlane({});
+  const none = await bare.prs();
+  assert.deepEqual(none.prs, []);
+  assert.match(none.error, /no repository context/);
+
+  // With a provider + repoDir → the listed PRs, error null.
+  const provider = { name: 'github', listPrs: async () => [{ number: 7, title: 'Fix', author: 'a', url: 'u' }] };
+  const dp = createDataPlane({ provider, repo: 'o/r', repoDir: '/tmp/x' });
+  const ok = await dp.prs();
+  assert.equal(ok.repo, 'o/r');
+  assert.equal(ok.provider, 'github');
+  assert.equal(ok.prs.length, 1);
+  assert.equal(ok.prs[0].number, 7);
+  assert.equal(ok.error, null);
+
+  // A provider failure surfaces as a tagged error, not a throw.
+  const boom = createDataPlane({ provider: { name: 'github', listPrs: async () => { throw new Error('gh down'); } }, repo: 'o/r', repoDir: '/tmp/x' });
+  const failed = await boom.prs();
+  assert.deepEqual(failed.prs, []);
+  assert.match(failed.error, /gh down/);
+});
+
 test('templates() and saveTemplates() round-trip through the store', () => {
   freshConfig();
   const dp = createDataPlane({});

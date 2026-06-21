@@ -125,7 +125,7 @@ const VENDOR_SCRIPTS = ['react.production.min.js', 'react-dom.production.min.js'
 const APP_SCRIPTS = [
   'h.js', 'util.js', 'stores.js', 'keys.js', 'components.js',
   'views/triage.js', 'views/progress.js', 'views/reply.js', 'views/final.js',
-  'views/history.js', 'views/templates.js',
+  'views/history.js', 'views/templates.js', 'views/prs.js',
   'App.js', 'main.js',
 ].map((f) => path.join('app', f));
 const UI_SCRIPTS = [...VENDOR_SCRIPTS, ...APP_SCRIPTS];
@@ -183,7 +183,19 @@ async function cmdServeHome(flags) {
 
   // repoDir lets the hub merge repo-local reply templates (.pr-replies/templates.json).
   const repoDir = flags['repo-dir'] ? path.resolve(flags['repo-dir']) : null;
-  const data = createDataPlane({ repoDir, config });
+  // Detect provider + repo from the remote so the hub's "Open PRs" picker can
+  // list open PRs/MRs. --provider/--host override; auto-detected otherwise. A
+  // failure here is non-fatal — the picker just reports "no repo context".
+  let provider = null;
+  let repoName = null;
+  if (repoDir) {
+    const detected = await git.detectRemote({ repoDir }).catch(() => null);
+    const name = flags.provider || (detected && detected.provider) || null;
+    const host = flags.host || (detected && detected.host) || undefined;
+    repoName = (detected && detected.nameWithOwner) || null;
+    if (name && isProviderName(name)) provider = createProvider(name, { host });
+  }
+  const data = createDataPlane({ repoDir, config, provider, repo: repoName });
   // Sweep abandoned session dirs (dead pid + old) once on hub start.
   try { const { removed } = data.pruneStale(); if (removed) logErr(`pruned ${removed} stale session dir(s)`); } catch (_) { /* non-fatal */ }
   const clientConfig = {

@@ -9,9 +9,10 @@ allowed-tools: Bash(node:*), Bash(cat:*), Bash(ls:*), Read
 
 # Open the pr-replies hub
 
-The **hub** is a payload-less browser view that spans every session: live
-sessions on this machine, the audit **history** of finished sessions, and the
-reply **templates** editor. It reads only from `~/.config/pr-replies/` and never
+The **hub** is a payload-less browser view that spans every session: the repo's
+**open PRs** (a picker), live sessions on this machine, the audit **history** of
+finished sessions, and the reply **templates** editor. It reads only from
+`~/.config/pr-replies/` and the repo's remote (to list open PRs) and never
 touches a live session's state. One hub runs per machine.
 
 ## Step 1 — If a hub is already running, just surface it
@@ -32,9 +33,15 @@ repo's local templates (`.pr-replies/templates.json`) on top of the user's:
 node "${CLAUDE_PLUGIN_ROOT}/server/server.js" serve --home --repo-dir "$PWD"
 ```
 
+The provider for the **Open PRs** picker is auto-detected from the repo's
+`origin` remote; pass `--provider github|gitlab` (and `--host HOST` for a
+self-managed instance) to override.
+
 The hub picks a random loopback port, writes `home.json`, opens the browser
 automatically, and prints its URL on stderr — surface that URL to the user.
-It lands on **History**; switch to **Templates** with the in-app nav (or `g t`).
+It lands on **History**; switch to **Open PRs** / **Templates** with the in-app
+nav (or `g t`). The PR picker lists open PRs/MRs — pick one and run
+`/pr-replies N` to start a session on it.
 
 To stop the hub later, the user closes the tab and the process with Ctrl-C in
 its terminal, or it exits on the next machine restart.

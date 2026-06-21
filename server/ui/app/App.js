@@ -13,6 +13,7 @@
 
   const NAV = [
     { name: 'pr', label: 'Active PR', modes: ['session'] },
+    { name: 'prs', label: 'Open PRs', modes: ['home'] },
     { name: 'history', label: 'History', modes: ['home', 'session'] },
     { name: 'templates', label: 'Templates', modes: ['home', 'session'] },
   ];
