@@ -534,6 +534,9 @@ kbd {
   padding: 1px 6px; margin-right: 2px;
 }
 
+/* opt-in summary-comment action (done view) */
+.summary-action { margin-top: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 /* committable-suggestion toggle + preview (reply view) */
 .suggestion-row { display: block; }
 .suggestion-row label { display: inline; }

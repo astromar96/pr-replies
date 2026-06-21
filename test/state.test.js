@@ -452,6 +452,32 @@ test('finishReply: after partial failure writes result with remaining errors, ph
   assert.equal(state.phase, 'done');
 });
 
+test('postSummary: posts one roll-up via postIssueComment, idempotent on a second call', async () => {
+  const dir = tmpDir();
+  writeReply(dir);
+  const issues = [];
+  const gh = makeGithub({ issue: (req) => { issues.push(req); return { ok: true, url: 'https://gh/summary' }; } });
+  const state = makeState(dir, { github: gh });
+  await state.init({ startPhase: 'reply' });
+  await state.submitReplies({ replies: [REVIEW_REPLY, ISSUE_REPLY] }); // posts + resolves, finalizes
+
+  const first = await state.postSummary();
+  assert.equal(first.url, 'https://gh/summary');
+  // One issue comment is the summary itself (ISSUE_REPLY posts via the same fake;
+  // count the summary post specifically by its body).
+  const summaryCalls = issues.filter(function (r) { return /pr-replies summary/.test(r.body); });
+  assert.equal(summaryCalls.length, 1);
+  assert.match(summaryCalls[0].body, /Replied to/);
+
+  const again = await state.postSummary();
+  assert.equal(again.already, true);
+  assert.equal(again.url, 'https://gh/summary');
+  // Still only one summary comment was posted.
+  assert.equal(issues.filter(function (r) { return /pr-replies summary/.test(r.body); }).length, 1);
+  // A summary_posted event is recorded for resume idempotency.
+  assert.equal(state.eventsSince(0).filter(function (e) { return e.type === 'summary_posted'; }).length, 1);
+});
+
 // ---------- stop ----------
 test('stop(timeout) during fixing: reply result timeout, phase cancelled, session_end reason timeout', async () => {
   const dir = tmpDir();

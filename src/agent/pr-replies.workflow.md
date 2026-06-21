@@ -422,7 +422,10 @@ resolves threads itself; the user handles partial failures in the browser
 
 The server records an audit entry for every finished session (submitted,
 cancelled, or timed out) to `~/.config/pr-replies/history/` automatically — you
-do not write it. Users browse past sessions and manage reply templates from the
+do not write it. The **Done** view also offers a one-click **opt-in summary
+comment** (a roll-up of replies posted, threads resolved, and fixes pushed) the
+user can post to the PR/MR — it's posted once per session and entirely
+user-driven; you don't act on it. Users browse past sessions and manage reply templates from the
 **hub** — they open it with the **`/pr-dashboard`** command (which runs
 `server.js serve --home`). Mention `/pr-dashboard` if the user asks where their
 history/templates live.

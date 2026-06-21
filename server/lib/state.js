@@ -164,6 +164,23 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
     try { history.record(buildRecord(status)); } catch (e) { log(`history record failed: ${e.message}`); }
   }
 
+  // A concise markdown roll-up of the session for an opt-in summary comment —
+  // replies posted, threads resolved, and the fix commits pushed.
+  function buildSummaryBody() {
+    const posted = results.posted.length;
+    const resolved = results.resolved.length;
+    const fixes = Object.keys(st.fixCommits || {}).map((k) => st.fixCommits[k]);
+    const lines = ['**pr-replies summary**', ''];
+    if (posted) lines.push(`- Replied to ${posted} comment${posted === 1 ? '' : 's'}`);
+    if (resolved) lines.push(`- Resolved ${resolved} thread${resolved === 1 ? '' : 's'}`);
+    if (fixes.length) {
+      lines.push(`- Pushed ${fixes.length} fix${fixes.length === 1 ? '' : 'es'}:`);
+      fixes.forEach((f) => lines.push(`  - \`${f.sha}\`${f.subject ? ' ' + f.subject : ''}`));
+    }
+    if (!posted && !resolved && !fixes.length) lines.push('- No replies posted.');
+    return lines.join('\n');
+  }
+
   // The single terminal transition. Writes the result file the next `wait`
   // polls for, flips to the terminal phase, emits session_end, records history
   // (once), and fires onTerminalCb. Every terminal path — cancel, stop,
@@ -474,6 +491,24 @@ function createState({ sessionDir, flags = {}, config = {}, provider, github, gi
       if (st.phase !== 'reply') throw httpError(409, `cannot finish in phase ${st.phase}`);
       if (st.posting) throw httpError(409, 'posting in progress');
       finalizeReply('submitted', 'done');
+    },
+
+    // Opt-in single roll-up comment on the PR/MR, posted via the same path as
+    // any reply. Idempotent: at most one per session — a recorded summary_posted
+    // event (which survives resume) short-circuits a repeat call.
+    async postSummary() {
+      if (st.phase === 'cancelled') throw httpError(409, 'session was cancelled');
+      if (!anyPayload()) throw httpError(409, 'no PR context for a summary');
+      const prior = st.events.find((e) => e.type === 'summary_posted');
+      if (prior) return { ok: true, url: prior.url, already: true };
+      const { repo, pr } = api.repoAndPr();
+      let body = buildSummaryBody();
+      if (config.signature) body += `\n\n${config.signature}`;
+      const out = await prov.postIssueComment({ repo, pr, body });
+      if (!out || !out.ok) throw httpError(502, `summary comment failed: ${(out && out.error) || 'unknown'}`);
+      recordEvent('summary_posted', { url: out.url });
+      notifyChange();
+      return { ok: true, url: out.url };
     },
 
     stop(reason) { terminate(reason === 'timeout' ? 'timeout' : 'cancelled', reason); },

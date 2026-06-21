@@ -170,6 +170,8 @@ function createApp({ state = null, data = null, snapshot = null, token, html, on
       case 'reply/finish':
         state.finishReply();
         return respondJson(res, 200, { ok: true });
+      case 'reply/summary':
+        return respondJson(res, 200, await state.postSummary());
       case 'reply/cancel':
         state.cancel('reply');
         return respondJson(res, 200, { ok: true });

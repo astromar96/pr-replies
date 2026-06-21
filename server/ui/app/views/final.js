@@ -7,6 +7,7 @@
   const C = PRR.components;
   const Fragment = PRR.hooks.Fragment;
   const useEffect = PRR.hooks.useEffect;
+  const useState = PRR.hooks.useState;
 
   function labelFor(snapshot, key) {
     const pools = [];
@@ -32,6 +33,16 @@
     const fixes = events.filter(function (e) { return e.type === 'fix_done'; })
       .map(function (e) { return { key: e.item, sha: e.sha, text: e.summary }; });
 
+    // Opt-in roll-up comment on the PR. Idempotent server-side: a summary_posted
+    // event (replayed from the log) means it's already done.
+    const summaryEv = events.find(function (e) { return e.type === 'summary_posted'; });
+    const [summing, setSumming] = useState(false);
+    const [summErr, setSummErr] = useState(null);
+    function postSummary() {
+      setSumming(true); setSummErr(null);
+      PRR.api.post('reply/summary').then(function () { setSumming(false); }).catch(function (e) { setSummErr(e.message); setSumming(false); });
+    }
+
     // Clear saved drafts once on a clean finish (matches the old renderFinal).
     useEffect(function () {
       PRR.keys.setScope(null);
@@ -50,6 +61,11 @@
         resolved=${result.resolved || []}
         fixes=${fixes}
         labelFor=${function (k) { return labelFor(snapshot, k); }} />
+      ${!cancelled ? html`<div className="summary-action">
+        ${summaryEv
+          ? html`<span className="status-line posted">✓ Summary comment posted${(summaryEv.url && summaryEv.url !== '(dry-run)') ? html` — <a href=${summaryEv.url} target="_blank" rel="noopener">view on the PR</a>` : ' (dry run)'}</span>`
+          : html`<${Fragment}><button onClick=${postSummary} disabled=${summing}>${summing ? 'Posting…' : 'Post a summary comment to the PR'}</button>${summErr ? html`<span className="status-line failed">✗ ${summErr}</span>` : null}</${Fragment}>`}
+      </div>` : null}
     </div>`;
 
     const footer = html`<${Fragment}>
