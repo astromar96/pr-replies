@@ -43,7 +43,7 @@
     const isIssue = props.kind === 'issue';
     const dec = props.dec;
     return html`<div className=${'card' + (props.focused ? ' focused' : '') + (props.hidden ? ' hidden' : '')}
-      data-card=${key} data-outdated=${(!isIssue && item.isOutdated) ? '1' : '0'}>
+      data-card=${key} data-outdated=${(!isIssue && item.isOutdated) ? '1' : '0'} tabIndex=${-1}>
       <div className="card-head">
         ${isIssue
           ? html`<span className="badge">general comment</span>`
@@ -293,7 +293,14 @@
       <div className="row">
         <input className="filter" id="filter" ref=${filterRef} aria-label="Filter comments by file, author, or text" placeholder="Filter by file, author, text…  ( / )" value=${q} onChange=${function (e) { setQ(e.target.value); }} />
         ${FILTER_CHIPS.map(function (c) {
-          return html`<span key=${c[0]} className=${'chip' + (chip === c[0] ? ' active' : '')} data-chip=${c[0]} onClick=${function () { setChip(c[0]); }}>${c[1]}</span>`;
+          const active = chip === c[0];
+          function pick() { setChip(c[0]); }
+          // Keyboard-reachable: role/tabIndex/Enter-Space/aria-pressed, mirroring
+          // the reply variant picker. Stays a <span> so .chip CSS and the
+          // data-chip harness selector are unchanged.
+          return html`<span key=${c[0]} className=${'chip' + (active ? ' active' : '')} data-chip=${c[0]}
+            role="button" tabIndex=${0} aria-pressed=${active}
+            onClick=${pick} onKeyDown=${function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>${c[1]}</span>`;
         })}
         <span className="match-count" id="match-count">${matchText}</span>
       </div>

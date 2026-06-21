@@ -9,6 +9,7 @@
   const C = PRR.components;
   const Fragment = PRR.hooks.Fragment;
   const useEffect = PRR.hooks.useEffect;
+  const useRef = PRR.hooks.useRef;
 
   const NAV = [
     { name: 'pr', label: 'Active PR', modes: ['session'] },
@@ -99,6 +100,21 @@
         : 'pr-replies';
     }, [phase, curName, snapshot]);
 
+    // On a genuine phase transition (not the initial mount), announce the new
+    // phase to assistive tech and move focus to the new view's heading, so
+    // keyboard / screen-reader users aren't stranded on a now-gone control.
+    const prevPhaseRef = useRef(null);
+    useEffect(function () {
+      if (!snapshot || curName !== 'pr') { prevPhaseRef.current = phase; return; }
+      const prev = prevPhaseRef.current;
+      prevPhaseRef.current = phase;
+      if (prev == null || prev === phase) return;
+      const region = document.getElementById('prr-live');
+      if (region) region.textContent = 'Now in ' + (TITLE_PHASE[phase] || phase) + '.';
+      const h1 = document.querySelector('#app h1');
+      if (h1) { h1.setAttribute('tabindex', '-1'); h1.focus({ preventScroll: false }); }
+    }, [phase, curName, snapshot]);
+
     // go-to chords: g h / g t / g p (capture phase, so they win over
     // per-view single-key bindings like reply's 'p').
     useEffect(function () {
@@ -124,6 +140,7 @@
     if (!snapshot) return html`<main className="wrap" id="app"><div className="boot">Loading session…</div></main>`;
 
     return html`<${Fragment}>
+      <div id="prr-live" className="sr-only" aria-live="polite" aria-atomic="true"></div>
       <${Nav} snapshot=${snapshot} curName=${curName} />
       <${ActiveView} snapshot=${snapshot} curName=${curName} />
       <${C.HelpOverlay} />

@@ -73,7 +73,15 @@
     useEffect(function () {
       if (!focused) return;
       const el = PRR.cardEl(focused);
-      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (!el) return;
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      // Move real DOM focus onto the card (cards carry tabIndex=-1) so screen
+      // readers follow the j/k ring — but never steal focus from a field the
+      // user is editing. The card div isn't a text input, so the global key
+      // dispatcher still sees shortcuts after the move.
+      const ae = document.activeElement;
+      const editing = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.tagName === 'SELECT');
+      if (!editing && typeof el.focus === 'function') el.focus({ preventScroll: true });
     }, [focused]);
 
     api.focused = focused;

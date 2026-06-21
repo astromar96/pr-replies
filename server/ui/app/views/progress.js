@@ -57,7 +57,7 @@
     const itemKeys = Object.keys(m.items);
     const checkNames = Object.keys(m.checks);
     const empty = !itemKeys.length && !checkNames.length && !m.push && !m.notes.length && !m.drafting;
-    return html`<div className="timeline" id="timeline">
+    return html`<div className="timeline" id="timeline" role="log" aria-live="polite" aria-relevant="additions text">
       ${itemKeys.map(function (key) {
         const it = m.items[key];
         const icon = it.status === 'running' ? html`<${C.Spinner} />`

@@ -6,6 +6,21 @@
  * and <Diff> components feed them through dangerouslySetInnerHTML, so the same
  * "escape before any tag is introduced" safety property holds. */
 (function () {
+  // Bounded memo for the pure string→HTML renderers below. On a large PR the
+  // same comment/diff/variant bodies are re-rendered on every keystroke, and the
+  // cost is the parse, not React. Keyed by source string; oldest evicted past max.
+  function memoByString(fn, max) {
+    const cache = new Map();
+    return function (s) {
+      const key = String(s == null ? '' : s);
+      if (cache.has(key)) return cache.get(key);
+      const val = fn(key);
+      cache.set(key, val);
+      if (cache.size > max) cache.delete(cache.keys().next().value);
+      return val;
+    };
+  }
+
   // ---------- text ----------
   PRR.esc = function (s) {
     return String(s == null ? '' : s)
@@ -110,6 +125,11 @@
     }).join('');
     return '<pre class="diff">' + lines + '</pre>';
   };
+
+  // Wrap the renderers in the string-keyed memo (they are pure functions of
+  // their input, so this is transparent — same input, same HTML).
+  PRR.renderMarkdown = memoByString(PRR.renderMarkdown, 600);
+  PRR.renderDiff = memoByString(PRR.renderDiff, 600);
 
   // ---------- api (relative to /{token}/) ----------
   PRR.api = {

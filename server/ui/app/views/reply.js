@@ -28,8 +28,7 @@
     ['?', 'toggle this help'],
   ];
 
-  function StatusLine(props) {
-    const s = props.status;
+  function statusInner(s) {
     if (!s) return null;
     if (s.status === 'posting') return html`<div className="status-line posting"><${C.Spinner} /> posting…</div>`;
     if (s.status === 'retrying') return html`<div className="status-line retrying"><${C.Spinner} /> retrying (attempt ${s.attempt}) — ${s.error || ''}</div>`;
@@ -37,6 +36,15 @@
     if (s.status === 'interrupted') return html`<div className="status-line interrupted">⚠ Interrupted by a restart — this reply <b>may already be on GitHub</b>. Check the thread before re-sending; it will not be posted again automatically.</div>`;
     if (s.status === 'failed') return html`<div className="status-line failed">✗ Failed: ${s.error || 'unknown error'}</div>`;
     return null;
+  }
+
+  // Persistent per-card live region so a posting → posted/failed transition is
+  // announced to screen readers (failures/interruptions assertively). The region
+  // stays in the DOM even when empty, which is what makes the update announce.
+  function StatusLine(props) {
+    const s = props.status;
+    const assertive = !!s && (s.status === 'failed' || s.status === 'interrupted' || s.status === 'retrying');
+    return html`<div className="status-region" role="status" aria-live=${assertive ? 'assertive' : 'polite'}>${statusInner(s)}</div>`;
   }
 
   function ResolveLine(props) {
@@ -120,7 +128,7 @@
       ? 'Posts as a new top-level PR comment (GitHub has no threading here).'
       : 'Empty reply = skipped. Markdown supported.';
 
-    return html`<div className=${'card' + (props.focused ? ' focused' : '')} data-card=${key}>
+    return html`<div className=${'card' + (props.focused ? ' focused' : '')} data-card=${key} tabIndex=${-1}>
       <div className="card-head">${head}</div>
       ${thread}
       <${FixCommit} commit=${props.fixCommit} fixedIn=${item.fixedIn} />

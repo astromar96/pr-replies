@@ -13,13 +13,15 @@
   const C = PRR.components;
 
   // ---------- raw HTML (markdown / diff) ----------
-  C.Md = function (props) {
+  // Memoized: props are plain strings, so a re-render with the same src/text
+  // skips both the vdom and (via util.js) the parse — the large-PR hot path.
+  C.Md = PRR.React.memo(function (props) {
     return html`<div dangerouslySetInnerHTML=${{ __html: PRR.renderMarkdown(props.src) }} />`;
-  };
-  C.Diff = function (props) {
+  });
+  C.Diff = PRR.React.memo(function (props) {
     if (!props.text) return null;
     return html`<div dangerouslySetInnerHTML=${{ __html: PRR.renderDiff(props.text) }} />`;
-  };
+  });
   C.Spinner = function () { return html`<span className="spinner"></span>`; };
 
   // ---------- badges ----------
@@ -128,7 +130,9 @@
       const body = typeof b.content === 'string'
         ? html`<span dangerouslySetInnerHTML=${{ __html: b.content }} />`
         : b.content;
-      return html`<div key=${b.id} className=${'banner ' + b.cls}>
+      // Announce banners to assistive tech — warnings/errors assertively.
+      const assertive = /warn|err|danger/.test(b.cls || '');
+      return html`<div key=${b.id} className=${'banner ' + b.cls} role=${assertive ? 'alert' : 'status'} aria-live=${assertive ? 'assertive' : 'polite'}>
         ${body}
         ${b.actions ? html`<div className="actions">${b.actions.map(function (a, i) {
           return html`<button key=${i} className=${'small' + (a.primary ? ' primary' : '')} onClick=${a.onClick}>${a.label}</button>`;
