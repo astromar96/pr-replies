@@ -30,10 +30,11 @@ have — **the tool never sees, handles, or stores a token.**
 - **AI triage you stay in control of** — the agent proposes a per-comment plan with a **confidence badge** and, for high-confidence fixes, a **sketched diff**. You pick **Fix / Reply only / Skip**, informed by your repo's history of what you've fixed vs. replied to.
 - **Live fix progress** — per-fix status, test checks, commit SHAs, and the push, streamed in real time, with an **Abort** at any point.
 - **Dual reply drafts** — a **Direct / fix-plan** and a warmer **Humanized** draft, side by side; pick one and tweak it.
+- **Committable suggestions** — for a single-hunk fix, optionally append a GitHub/GitLab **`suggestion` block** so the reviewer applies the exact change from the PR — works on forks and self-managed hosts where the web button doesn't.
 - **Real diffs, not hallucinations** — each reply shows the **actual fix commit diff read from git**, not from the model's memory.
 - **Agent-agnostic** — runs under **Claude Code** (plugin) or **OpenAI Codex** (skill) off one shared, zero-dependency core.
-- **Keyboard-first** — `j`/`k`, `1`/`2`/`3`, `⌘↩`, with filtering, batch actions, and file/reviewer grouping for big PRs.
-- **Team-friendly, still local** — assign comments to teammates, optional @-mentions, a **History** audit log, and reusable **reply templates**.
+- **Keyboard-first & accessible** — `j`/`k`, `1`/`2`/`3`, `⌘↩`, with filtering, batch actions, file/reviewer grouping, live-region announcements, focus management, and `prefers-reduced-motion`.
+- **Team-friendly, still local** — an **Open PRs** picker, assign comments to teammates, optional @-mentions, an opt-in **summary comment**, a **History** audit log, and reusable **reply templates**.
 - **Light / dark / system** theme, and edits that survive refreshes, timeouts, and even a server restart.
 - **GitHub + GitLab** (incl. self-managed), auto-detected from your git remote.
 - **Zero build, zero runtime dependencies** — the React UI ships as vendored static files, served unbundled.
@@ -77,6 +78,13 @@ toggle and a **Resolve thread** checkbox.
 
 ![Reply drafts — direct vs. humanized](docs/screenshots/reply.png)
 
+For a fix that's a single contiguous hunk on the commented lines, the agent can
+attach a **committable suggestion**. Tick **Append a committable suggestion** and
+the reply carries a `` ```suggestion `` block the reviewer can apply in one click —
+including on **forks** and **self-managed** hosts where the web "add suggestion"
+button isn't available. The suggestion text is read from the validated payload
+(never the browser), so it always matches the pushed fix.
+
 Hit **Send** — the server posts via `gh` / `glab` with rate-limit retries,
 resolves the threads you ticked, and streams per-item status back. Partial
 failures stay on screen with **Retry failed / Finish anyway**.
@@ -86,15 +94,24 @@ failures stay on screen with **Retry failed / Finish anyway**.
 ### Done
 
 A summary of what was posted, resolved, and fixed — then back to your agent
-session for the recap.
+session for the recap. One click **posts an opt-in summary comment** to the PR/MR
+(replies posted, threads resolved, fixes pushed) so reviewers get a notification —
+replying inside threads notifies no one. It's posted at most once per session and
+survives a restart.
 
 ![Done summary](docs/screenshots/done.png)
 
-## The hub — History & Templates
+## The hub — Open PRs, History & Templates
 
 These make pr-replies feel like a team tool while staying **local** — each
 developer runs it on their own machine with their own `gh`/`glab` auth. No hosted
 server, no accounts. Open it with `/pr-dashboard` (no PR needed).
+
+**Open PRs** — a picker of the current repo's open pull/merge requests (provider
+auto-detected from the remote), so you can see what's waiting and jump in. Pick
+one and run `/pr-replies N` to start a session on it.
+
+![Open PRs picker](docs/screenshots/open-prs.png)
 
 **History** — an audit log of every finished session (what was posted, resolved,
 and fixed, with commit SHAs and timestamps), written automatically.
@@ -219,7 +236,8 @@ suite and UI preview use it so they never touch your real files).
 
 ## Privacy & security
 
-- **Local only** — served from `127.0.0.1` behind a random per-session URL token. No hosted server, no accounts, no telemetry.
+- **Local only** — served from `127.0.0.1` behind a random per-session URL token, checked in constant time and guarded against DNS-rebinding via a Host-header check. No hosted server, no accounts, no telemetry.
+- **Owner-only on disk** — session dirs are created `0700` and the token/content files `0600`, so other local users can't read the URL token or your review content.
 - **Never handles tokens** — auth is delegated entirely to your `gh` / `glab` CLI and their existing credentials.
 - **No payload in the HTML** — the browser fetches state over `GET /state` and `GET /events` (SSE).
 - **Durable edits** — survive refreshes, timeouts, and a server restart (localStorage keyed by repo + PR, plus a resumable on-disk session).
@@ -240,7 +258,7 @@ stop --session DIR
 
 - **The workflow drives the flow.** A single agent-neutral source in `src/agent/` walks the agent through each step (Step 0 detects the provider; later steps branch between `gh` and `glab`); `npm run build:agents` generates both the Claude Code command (`commands/*.md`) and the Codex skill (`.agents/skills/*/SKILL.md`) from it, so the two runners never drift.
 - **Provider-agnostic core.** Backends in `server/lib/providers/` sit behind a `createProvider` factory — `github.js` (`gh`) and `gitlab.js` (`glab`, REST-only) share a retry kernel and expose one interface (`postReviewReply` / `postIssueComment` / `resolveThread` / `listPrs`).
-- **Zero-dependency server.** `server/server.js` is a CLI (`serve` / `wait` / `emit` / `advance` / `stop`, plus a read-only `suggest`) over stdlib libs. A session state machine (`triage → fixing → reply → done|cancelled`) persists everything atomically under `/tmp/pr-replies/`; `events.jsonl` doubles as the SSE replay log, so a refresh never loses state. `serve --home` is the same server with no session — a read-only data plane for history and templates.
+- **Zero-dependency server.** `server/server.js` is a CLI (`serve` / `wait` / `emit` / `advance` / `stop`, plus a read-only `suggest`) over stdlib libs. A session state machine (`triage → fixing → reply → done|cancelled`) persists everything atomically under `/tmp/pr-replies/`; `events.jsonl` doubles as the SSE replay log, so a refresh never loses state. `serve --home` is the same server with no session — a read-only data plane for the repo's open PRs, history, and templates.
 - **No build step.** `server/ui/` is a React single page: vendored React + [htm](https://github.com/developit/htm) and the app modules are concatenated into one inline `<script>` at serve time, so there's nothing to compile or install.
 - **Where replies land.** On GitHub, inline replies go **inside the review thread** (GraphQL `addPullRequestReviewThreadReply`, REST fallback), general comments become new top-level PR comments, and ticked threads resolve via `resolveReviewThread`. On GitLab the same maps to MR discussion replies, top-level notes, and resolving a discussion. Resolve failures are non-fatal.
 
