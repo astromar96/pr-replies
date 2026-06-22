@@ -8,7 +8,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test",
     "ui:preview": "node scripts/ui-preview.js",
     "ui:preview:headed": "node scripts/ui-preview.js --headed",
     "home": "node server/server.js serve --home",
