@@ -11,7 +11,9 @@ const { install } = require('../scripts/install-codex.js');
 
 function byPath() {
   const map = {};
-  for (const o of generate()) map[path.relative(root, o.path)] = o.content;
+  // Key with forward slashes so lookups like map['commands/pr-replies.md'] work
+  // on Windows too, where path.relative yields backslash separators.
+  for (const o of generate()) map[path.relative(root, o.path).split(path.sep).join('/')] = o.content;
   return map;
 }
 
