@@ -1,0 +1,8 @@
+# Normalize line endings to LF in the working tree on every platform. The GitHub
+# Windows runners default to core.autocrlf=true, which would otherwise check out
+# CRLF and break (a) the build-agents frontmatter parser (its regex expects
+# `---\n`) and (b) the generated-file drift check (CRLF on disk vs LF output).
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png binary

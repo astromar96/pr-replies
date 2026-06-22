@@ -67,7 +67,10 @@ function generate() {
   const files = fs.readdirSync(SRC_DIR).filter((f) => f.endsWith('.workflow.md')).sort();
   if (!files.length) throw new Error(`no *.workflow.md sources in ${SRC_DIR}`);
   for (const f of files) {
-    const src = parseSource(f, fs.readFileSync(path.join(SRC_DIR, f), 'utf8'));
+    // Normalize CRLF so the parser and the LF-only generated output are stable
+    // even if a source is checked out / edited with Windows line endings.
+    const text = fs.readFileSync(path.join(SRC_DIR, f), 'utf8').replace(/\r\n/g, '\n');
+    const src = parseSource(f, text);
     for (const target of Object.keys(TARGETS)) {
       outputs.push({ path: TARGETS[target].outPath(src.frontmatter.name), content: renderTarget(f, src, target) });
     }
